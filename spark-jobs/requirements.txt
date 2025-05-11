@@ -1,0 +1,5 @@
+pymongo==4.3.3
+psycopg2-binary==2.9.5
+nltk==3.8.1
+schedule==1.1.0
+textblob==0.17.1

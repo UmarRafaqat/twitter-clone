@@ -1,18 +1,20 @@
-/** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    "./src/**/*.{js,jsx,ts,tsx}",
-  ],
+  purge: ['./src/**/*.{js,jsx,ts,tsx}', './public/index.html'],
+  darkMode: false, // or 'media' or 'class'
   theme: {
     extend: {
       colors: {
         'twitter-blue': '#1DA1F2',
-        'twitter-dark': '#14171A',
-        'twitter-light': '#AAB8C2',
-        'twitter-lighter': '#E1E8ED',
-        'twitter-lightest': '#F5F8FA',
+        'twitter-blue-dark': '#1a91da',
       },
     },
   },
+  variants: {
+    extend: {
+      opacity: ['disabled'],
+      backgroundColor: ['disabled'],
+      cursor: ['disabled'],
+    },
+  },
   plugins: [],
-}
+};

@@ -9,4 +9,6 @@ cassandra-driver==3.25.0
 kafka-python==2.0.2
 python-multipart==0.0.6
 boto3==1.26.129
-PyJWT==2.6.0  # Add this line for JWT support
+minio==7.1.14
+python-magic==0.4.27
+PyJWT==2.6.0

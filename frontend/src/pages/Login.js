@@ -1,61 +1,138 @@
-import React, { useState, useContext } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useContext, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
+import axios from 'axios';
+
+const API_URL = 'http://localhost:8000';
 
 const Login = () => {
+  const { setDirectUserData, isAuthenticated, currentUser } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  
-  const { login } = useContext(AuthContext);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const message = location.state?.message;
+  const [isLoading, setIsLoading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+
+  // Debug current authentication state
+  useEffect(() => {
+    console.log("Login page - isAuthenticated:", isAuthenticated);
+    if (currentUser) {
+      console.log("Login page - currentUser:", currentUser);
+    }
+  }, [isAuthenticated, currentUser]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && currentUser && currentUser.id) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate, currentUser]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setDebugInfo(null);
+    
+    if (!username.trim() || !password.trim()) {
+      setError('Please enter both username and password');
+      return;
+    }
+    
+    setIsLoading(true);
     
     try {
-      const result = await login(username, password);
-      if (result.success) {
-        navigate('/');
-      } else {
-        setError(result.message);
+      // STEP 1: Direct API call to get token
+      console.log("Step 1: Getting token...");
+      const formData = new FormData();
+      formData.append('username', username);
+      formData.append('password', password);
+      
+      const tokenResponse = await axios.post(`${API_URL}/token`, formData);
+      console.log("Token response:", tokenResponse.data);
+      
+      if (!tokenResponse.data || !tokenResponse.data.access_token) {
+        setError("Server error: No access token received");
+        setDebugInfo(tokenResponse.data);
+        setIsLoading(false);
+        return;
       }
+      
+      const token = tokenResponse.data.access_token;
+      
+      // STEP 2: Get user data with token
+      console.log("Step 2: Getting user data with token...");
+      const userResponse = await axios.get(`${API_URL}/users/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      console.log("User data response:", userResponse.data);
+      
+      // STEP 3: Create complete user object and validate
+      const userData = {
+        ...userResponse.data,
+        access_token: token
+      };
+      
+      console.log("Final user data:", userData);
+      
+      // Show debug info
+      setDebugInfo({
+        token: token,
+        userData: userData
+      });
+      
+      // Save user in context and localStorage
+      if (setDirectUserData) {
+        setDirectUserData(userData);
+      } else {
+        // Fallback if setDirectUserData isn't available
+        localStorage.setItem('user', JSON.stringify(userData));
+        window.location.href = '/'; // Force reload as fallback
+      }
+      
+      // Navigate to home
+      navigate('/');
     } catch (err) {
-      setError('An unexpected error occurred. Please try again.');
-      console.error(err);
+      console.error('Login error:', err);
+      
+      // Handle different error types
+      if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else if (err.message) {
+        setError(`Error: ${err.message}`);
+      } else {
+        setError('Login failed. Please check your username and password.');
+      }
+      
+      // Include debug info
+      setDebugInfo({
+        error: err.message,
+        response: err.response?.data
+      });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
-      <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-md">
-        <div className="text-center">
-          <svg viewBox="0 0 24 24" className="h-12 w-12 text-twitter-blue mx-auto">
-            <g>
-              <path
-                fill="currentColor"
-                d="M23.643 4.937c-.835.37-1.732.62-2.675.733.962-.576 1.7-1.49 2.048-2.578-.9.534-1.897.922-2.958 1.13-.85-.904-2.06-1.47-3.4-1.47-2.572 0-4.658 2.086-4.658 4.66 0 .364.042.718.12 1.06-3.873-.195-7.304-2.05-9.602-4.868-.4.69-.63 1.49-.63 2.342 0 1.616.823 3.043 2.072 3.878-.764-.025-1.482-.234-2.11-.583v.06c0 2.257 1.605 4.14 3.737 4.568-.392.106-.803.162-1.227.162-.3 0-.593-.028-.877-.082.593 1.85 2.313 3.198 4.352 3.234-1.595 1.25-3.604 1.995-5.786 1.995-.376 0-.747-.022-1.112-.065 2.062 1.323 4.51 2.093 7.14 2.093 8.57 0 13.255-7.098 13.255-13.254 0-.2-.005-.402-.014-.602.91-.658 1.7-1.477 2.323-2.41z"
-              ></path>
-            </g>
-          </svg>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Sign in to Mini-Twitter</h2>
-          {message && (
-            <div className="mt-2 p-2 bg-green-50 text-green-800 rounded-md">
-              {message}
-            </div>
-          )}
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h1 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Sign in to your account</h1>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Or{' '}
+            <Link to="/register" className="font-medium text-twitter-blue hover:text-blue-500">
+              create a new account
+            </Link>
+          </p>
         </div>
         
         {error && (
-          <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded-md">
-            {error}
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">{error}</span>
           </div>
         )}
         
@@ -72,6 +149,7 @@ const Login = () => {
                 placeholder="Username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                disabled={isLoading}
               />
             </div>
             <div>
@@ -80,55 +158,42 @@ const Login = () => {
                 id="password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-twitter-blue focus:border-twitter-blue focus:z-10 sm:text-sm"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
               />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                className="h-4 w-4 text-twitter-blue focus:ring-twitter-blue border-gray-300 rounded"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                Remember me
-              </label>
-            </div>
-
-            <div className="text-sm">
-              <a href="#" className="font-medium text-twitter-blue hover:text-blue-500">
-                Forgot your password?
-              </a>
             </div>
           </div>
 
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-twitter-blue hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-twitter-blue ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-twitter-blue hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-twitter-blue ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+              disabled={isLoading}
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Signing in...
+                </>
+              ) : 'Sign in'}
             </button>
           </div>
-          
-          <div className="text-center">
-            <p className="mt-2 text-sm text-gray-600">
-              Don't have an account?{' '}
-              <Link to="/register" className="font-medium text-twitter-blue hover:text-blue-500">
-                Sign up
-              </Link>
-            </p>
-          </div>
         </form>
+        
+        {/* Debug info section (remove in production) */}
+        {debugInfo && (
+          <div className="mt-4 p-4 bg-gray-100 rounded-md text-xs overflow-auto max-h-64">
+            <h3 className="font-bold mb-2">Debug Info:</h3>
+            <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
       </div>
     </div>
   );

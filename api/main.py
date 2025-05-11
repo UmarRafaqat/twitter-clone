@@ -1,12 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 import os
 import json
 import uuid
+import io
+import socket
+import time
 from pymongo import MongoClient
 from cassandra.cluster import Cluster
 import psycopg2
@@ -15,16 +19,13 @@ from kafka import KafkaProducer
 import jwt
 import boto3
 from botocore.client import Config
+import minio
+import minio.error
+from uuid import uuid4
 
-app = FastAPI(title="Mini-Twitter API")
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+
+
 # Configuration from environment variables
 DB_URL = os.getenv("DATABASE_URL", "postgresql://mini_twitter:password@postgres:5432/mini_twitter")
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017/mini_twitter")
@@ -33,64 +34,12 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# S3/Minio configuration
-S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://minio:9000")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
-S3_BUCKET = "mini-twitter"
-
-# Initialize S3 client
-try:
-    s3_client = boto3.client(
-        's3',
-        endpoint_url=S3_ENDPOINT,
-        aws_access_key_id=S3_ACCESS_KEY,
-        aws_secret_access_key=S3_SECRET_KEY,
-        config=Config(signature_version='s3v4')
-    )
-
-    # Create bucket if it doesn't exist
-    try:
-        s3_client.head_bucket(Bucket=S3_BUCKET)
-    except:
-        s3_client.create_bucket(Bucket=S3_BUCKET)
-except Exception as e:
-    print(f"Warning: Could not connect to S3/Minio: {e}")
-    s3_client = None
-
-# Database connections
-def get_pg_conn():
-    conn = psycopg2.connect(DB_URL)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-def get_mongo_client():
-    client = MongoClient(MONGODB_URL)
-    try:
-        yield client
-    finally:
-        client.close()
-
-def get_cassandra_session():
-    cluster = Cluster(CASSANDRA_HOSTS)
-    session = cluster.connect()
-    try:
-        yield session
-    finally:
-        cluster.shutdown()
-
-# Kafka producer
-try:
-    kafka_producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda v: json.dumps(v).encode('utf-8')
-    )
-except Exception as e:
-    print(f"Warning: Could not connect to Kafka: {e}")
-    kafka_producer = None
-
+class UserUpdate(BaseModel):
+    bio: Optional[str] = None
+    location: Optional[str] = None
+    website: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    
 # Models
 class UserCreate(BaseModel):
     username: str
@@ -121,8 +70,214 @@ class TweetResponse(BaseModel):
 class PostgresQuery(BaseModel):
     query: str
 
+# Comment model classes
+class CommentCreate(BaseModel):
+    content: str
+    parent_id: Optional[str] = None  # None for top-level comments, comment_id for replies
+
+class CommentResponse(BaseModel):
+    id: str
+    tweet_id: str
+    user_id: str
+    username: str
+    content: str
+    created_at: datetime
+    likes_count: int = 0
+    parent_id: Optional[str] = None
+    path: List[str] = []
+    depth: int = 0
+    replies_count: int = 0
+
+# Create the FastAPI app
+app = FastAPI(title="Mini-Twitter API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Function to check if a host is reachable
+def is_host_reachable(host, port=9000, timeout=1):
+    try:
+        socket.create_connection((host, port), timeout)
+        print(f"Host {host}:{port} is reachable")
+        return True
+    except (socket.timeout, socket.error) as e:
+        print(f"Host {host}:{port} is not reachable: {e}")
+        return False
+
+# Minio configuration
+# Try different hostnames to connect to Minio
+MINIO_HOSTNAME_OPTIONS = [
+    "172.20.0.11",  # Minio container IP from network inspect
+    "minio",        # Service name
+    "localhost",    # For localhost access
+    os.getenv("S3_ENDPOINT", "minio").replace("http://", "").replace(":9000", "")
+]
+
+MINIO_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("S3_SECRET_KEY", "minioadmin")
+MINIO_BUCKET = "mini-twitter"
+
+# Initialize Minio client with retry logic
+minio_client = None
+selected_hostname = None
+
+# Try each hostname with retries
+for hostname in MINIO_HOSTNAME_OPTIONS:
+    print(f"Checking if {hostname} is reachable...")
+    if is_host_reachable(hostname):
+        print(f"Trying to connect to Minio at {hostname}:9000")
+        for attempt in range(3):  # Try 3 times per hostname
+            try:
+                minio_client = minio.Minio(
+                    endpoint=f"{hostname}:9000",
+                    access_key=MINIO_ACCESS_KEY,
+                    secret_key=MINIO_SECRET_KEY,
+                    secure=False
+                )
+                
+                # Test connection
+                buckets = minio_client.list_buckets()
+                print(f"Successfully connected to Minio at {hostname}:9000")
+                print(f"Existing buckets: {[b.name for b in buckets]}")
+                selected_hostname = hostname
+                
+                # Create bucket if it doesn't exist
+                if not minio_client.bucket_exists(MINIO_BUCKET):
+                    minio_client.make_bucket(MINIO_BUCKET)
+                    print(f"Created bucket: {MINIO_BUCKET}")
+                    
+                    # Set bucket policy to allow public access for reading
+                    policy = {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": ["*"]},
+                                "Action": ["s3:GetObject"],
+                                "Resource": [f"arn:aws:s3:::{MINIO_BUCKET}/*"]
+                            }
+                        ]
+                    }
+                    try:
+                        minio_client.set_bucket_policy(MINIO_BUCKET, json.dumps(policy))
+                        print(f"Successfully set bucket policy for {MINIO_BUCKET}")
+                    except Exception as e:
+                        print(f"Error setting bucket policy: {e}")
+                else:
+                    print(f"Bucket {MINIO_BUCKET} already exists, ensuring policy is set")
+                    try:
+                        # Ensure policy is set even if bucket exists
+                        policy = {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Principal": {"AWS": ["*"]},
+                                    "Action": ["s3:GetObject"],
+                                    "Resource": [f"arn:aws:s3:::{MINIO_BUCKET}/*"]
+                                }
+                            ]
+                        }
+                        minio_client.set_bucket_policy(MINIO_BUCKET, json.dumps(policy))
+                        print(f"Successfully set bucket policy for existing bucket {MINIO_BUCKET}")
+                    except Exception as e:
+                        print(f"Error setting bucket policy for existing bucket: {e}")
+                
+                # Successfully connected and configured
+                break
+            except Exception as e:
+                print(f"Attempt {attempt+1} failed to connect to Minio at {hostname}:9000: {e}")
+                time.sleep(1)  # Wait before retry
+        
+        # If we connected successfully, break out of the hostname loop
+        if minio_client is not None:
+            break
+
+if minio_client is None:
+    print("Warning: Could not initialize Minio client after trying all hostnames")
+
+# Initialize S3 client
+S3_ENDPOINT = None
+s3_client = None
+
+# Try each hostname for S3 client
+if selected_hostname:
+    S3_ENDPOINT = f"http://{selected_hostname}:9000"
+    try:
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=S3_ENDPOINT,
+            aws_access_key_id=MINIO_ACCESS_KEY,
+            aws_secret_access_key=MINIO_SECRET_KEY,
+            config=Config(signature_version='s3v4')
+        )
+
+        # Create bucket if it doesn't exist
+        try:
+            s3_client.head_bucket(Bucket=MINIO_BUCKET)
+            print(f"S3 bucket {MINIO_BUCKET} exists")
+        except:
+            s3_client.create_bucket(Bucket=MINIO_BUCKET)
+            print(f"Created S3 bucket {MINIO_BUCKET}")
+    except Exception as e:
+        print(f"Warning: Could not connect to S3/Minio: {e}")
+        s3_client = None
+else:
+    print("Warning: No selected_hostname for S3 client initialization")
+
+# Kafka producer
+try:
+    kafka_producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+except Exception as e:
+    print(f"Warning: Could not connect to Kafka: {e}")
+    kafka_producer = None
+
+# Database connections
+def get_pg_conn():
+    conn = psycopg2.connect(DB_URL)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def get_mongo_client():
+    client = MongoClient(MONGODB_URL)
+    try:
+        yield client
+    finally:
+        client.close()
+
+def get_cassandra_session():
+    cluster = Cluster(CASSANDRA_HOSTS)
+    session = cluster.connect()
+    try:
+        yield session
+    finally:
+        cluster.shutdown()
+
 # Authentication
+# Custom HTTP Bearer for optional authentication
+class OptionalHTTPBearer(HTTPBearer):
+    async def __call__(
+        self, request: Request
+    ) -> Optional[HTTPAuthorizationCredentials]:
+        try:
+            return await super().__call__(request)
+        except HTTPException:
+            return None
+
+# OAuth2 schemes
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+optional_oauth2_scheme = OptionalHTTPBearer(auto_error=False)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -150,12 +305,44 @@ def get_current_user(token: str = Depends(oauth2_scheme), conn = Depends(get_pg_
     
     return user
 
+def get_current_user_optional(token: Optional[HTTPAuthorizationCredentials] = Depends(optional_oauth2_scheme), conn = Depends(get_pg_conn)):
+    """
+    Optional authentication - returns None instead of raising an exception if authentication fails.
+    Use this for endpoints that should work with or without authentication.
+    """
+    if not token:
+        return None
+    
+    try:
+        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+            
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT id, username, email, created_at FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        cursor.close()
+        
+        return user
+    except:
+        return None
+
 # Health check endpoint
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    storage_status = "available" if minio_client else "unavailable"
+    return {
+        "status": "ok", 
+        "timestamp": datetime.now().isoformat(),
+        "storage_status": storage_status,
+        "storage_details": {
+            "endpoint": f"http://{selected_hostname}:9000" if selected_hostname else "Not connected",
+            "tried_hostnames": MINIO_HOSTNAME_OPTIONS
+        }
+    }
 
-# Routes
+# User routes
 @app.post("/register", response_model=User)
 def register(user: UserCreate, conn = Depends(get_pg_conn)):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -189,6 +376,232 @@ def register(user: UserCreate, conn = Depends(get_pg_conn)):
         "email": user.email,
         "created_at": created_at
     }
+
+# 2. Modify the update_user_profile endpoint to handle the profile image URL
+@app.put("/users/{user_id}", summary="Update user profile")
+def update_user_profile(
+    user_id: str,
+    user_data: UserUpdate,
+    conn=Depends(get_pg_conn)
+):
+    try:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        # Dynamically build update fields
+        fields = []
+        values = []
+        if user_data.bio is not None:
+            fields.append("bio = %s")
+            values.append(user_data.bio)
+        if user_data.location is not None:
+            fields.append("location = %s")
+            values.append(user_data.location)
+        if user_data.website is not None:
+            fields.append("website = %s")
+            values.append(user_data.website)
+        if user_data.profile_image_url is not None:
+            fields.append("profile_image_url = %s")
+            values.append(user_data.profile_image_url)
+
+        if not fields:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        values.append(user_id)  # user_id goes last for WHERE clause
+        query = f"UPDATE users SET {', '.join(fields)} WHERE id = %s RETURNING *"
+        cursor.execute(query, values)
+        updated_user = cursor.fetchone()
+
+        if not updated_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        conn.commit()
+        # Convert datetime to isoformat
+        for key, value in updated_user.items():
+            if isinstance(value, datetime):
+                updated_user[key] = value.isoformat()
+
+        return updated_user
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# 1. Initialize like counts for existing tweets
+def initialize_like_counts(mongo_client, cassandra_session):
+    """Initialize like counts for any tweets without counts"""
+    try:
+        # Create keyspace and table if they don't exist
+        cassandra_session.execute(
+            """
+            CREATE KEYSPACE IF NOT EXISTS mini_twitter 
+            WITH REPLICATION = { 
+                'class' : 'SimpleStrategy', 
+                'replication_factor' : 1 
+            }
+            """
+        )
+        
+        cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mini_twitter.likes (
+                tweet_id TEXT,
+                user_id TEXT,
+                created_at TIMESTAMP,
+                PRIMARY KEY ((tweet_id), user_id)
+            )
+            """
+        )
+        
+        cassandra_session.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mini_twitter.like_counts (
+                tweet_id TEXT PRIMARY KEY,
+                count COUNTER
+            )
+            """
+        )
+        
+        # Get all tweets
+        tweets_collection = mongo_client.mini_twitter.tweets
+        tweets = list(tweets_collection.find({}, {"id": 1}))
+        
+        # For each tweet, calculate like count
+        for tweet in tweets:
+            tweet_id = tweet["id"]
+            
+            # Check if count already exists
+            rows = cassandra_session.execute(
+                "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+                (tweet_id,)
+            )
+            
+            count_exists = False
+            for row in rows:
+                count_exists = True
+                break
+            
+            if not count_exists:
+                # Count likes for this tweet
+                likes_rows = cassandra_session.execute(
+                    "SELECT COUNT(*) FROM mini_twitter.likes WHERE tweet_id = %s",
+                    (tweet_id,)
+                )
+                
+                like_count = 0
+                for row in likes_rows:
+                    like_count = row[0]
+                    break
+                
+                # Initialize the counter
+                if like_count > 0:
+                    # Initialize with the correct count
+                    for _ in range(like_count):
+                        cassandra_session.execute(
+                            "UPDATE mini_twitter.like_counts SET count = count + 1 WHERE tweet_id = %s",
+                            (tweet_id,)
+                        )
+                    print(f"Initialized like count for tweet {tweet_id} with {like_count} likes")
+                else:
+                    # Initialize with zero (just to create the record)
+                    cassandra_session.execute(
+                        "UPDATE mini_twitter.like_counts SET count = count + 0 WHERE tweet_id = %s",
+                        (tweet_id,)
+                    )
+                    print(f"Initialized like count for tweet {tweet_id} with 0 likes")
+        
+        print("Like count initialization complete")
+    except Exception as e:
+        print(f"Error initializing like counts: {e}")
+
+# Helper function to enhance tweets with accurate like counts
+def enhance_tweets_with_likes(tweets, cassandra_session):
+    """Add accurate like counts to a list of tweets"""
+    if not tweets:
+        return tweets
+        
+    # Get like counts for all tweets from Cassandra
+    tweet_ids = [tweet["id"] for tweet in tweets]
+    like_counts = {}
+    
+    if tweet_ids:
+        try:
+            # Create keyspace and table if they don't exist
+            cassandra_session.execute(
+                """
+                CREATE KEYSPACE IF NOT EXISTS mini_twitter 
+                WITH REPLICATION = { 
+                    'class' : 'SimpleStrategy', 
+                    'replication_factor' : 1 
+                }
+                """
+            )
+            
+            cassandra_session.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mini_twitter.like_counts (
+                    tweet_id TEXT PRIMARY KEY,
+                    count COUNTER
+                )
+                """
+            )
+            
+            # Use a set to deduplicate tweet IDs
+            unique_tweet_ids = set(tweet_ids)
+            
+            # For each tweet, get its like count
+            for tweet_id in unique_tweet_ids:
+                # First check if the counter exists
+                rows = cassandra_session.execute(
+                    "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+                    (tweet_id,)
+                )
+                
+                count = 0
+                count_exists = False
+                for row in rows:
+                    count = row.count
+                    count_exists = True
+                    break
+                
+                # If counter doesn't exist, initialize it
+                if not count_exists:
+                    # Count likes for this tweet
+                    likes_rows = cassandra_session.execute(
+                        "SELECT COUNT(*) FROM mini_twitter.likes WHERE tweet_id = %s",
+                        (tweet_id,)
+                    )
+                    
+                    like_count = 0
+                    for row in likes_rows:
+                        like_count = row[0]
+                        break
+                    
+                    # Initialize the counter
+                    if like_count > 0:
+                        # Initialize with the correct count
+                        for _ in range(like_count):
+                            cassandra_session.execute(
+                                "UPDATE mini_twitter.like_counts SET count = count + 1 WHERE tweet_id = %s",
+                                (tweet_id,)
+                            )
+                        count = like_count
+                    else:
+                        # Initialize with zero
+                        cassandra_session.execute(
+                            "UPDATE mini_twitter.like_counts SET count = count + 0 WHERE tweet_id = %s",
+                            (tweet_id,)
+                        )
+                
+                # Ensure count is always non-negative
+                like_counts[tweet_id] = max(0, count)
+        except Exception as e:
+            print(f"Error fetching like counts: {e}")
+    
+    # Update each tweet with its like count
+    for tweet in tweets:
+        tweet["likes_count"] = like_counts.get(tweet["id"], 0)
+    
+    return tweets
 
 @app.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), conn = Depends(get_pg_conn)):
@@ -299,25 +712,495 @@ def get_following_count(
     
     return {"count": count}
 
+# Comments endpoints with nested comments support
+@app.post("/tweets/{tweet_id}/comments", response_model=CommentResponse)
+def create_comment(
+    tweet_id: str,
+    comment: CommentCreate,
+    current_user = Depends(get_current_user),
+    mongo_client = Depends(get_mongo_client)
+):
+    """Add a comment to a tweet with support for nested comments"""
+    # Get MongoDB collections
+    tweets_collection = mongo_client.mini_twitter.tweets
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Check if tweet exists
+    tweet = tweets_collection.find_one({"id": tweet_id})
+    if not tweet:
+        raise HTTPException(status_code=404, detail="Tweet not found")
+    
+    # Create comment
+    comment_id = str(uuid.uuid4())
+    created_at = datetime.utcnow()
+    
+    # Initialize path and depth for hierarchical structure
+    path = [comment_id]
+    depth = 0
+    
+    # If this is a reply to another comment, validate and set up the hierarchy
+    if comment.parent_id:
+        parent_comment = comments_collection.find_one({"id": comment.parent_id})
+        if not parent_comment:
+            raise HTTPException(status_code=404, detail="Parent comment not found")
+        
+        # Make sure parent comment belongs to this tweet
+        if parent_comment["tweet_id"] != tweet_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Parent comment does not belong to this tweet"
+            )
+        
+        # Update path and depth based on parent
+        parent_path = parent_comment.get("path", [parent_comment["id"]])
+        path = parent_path + [comment_id]
+        depth = parent_comment.get("depth", 0) + 1
+        
+        # Limit nesting depth (optional, can be adjusted)
+        if depth > 5:
+            raise HTTPException(
+                status_code=400, 
+                detail="Maximum comment nesting depth reached (limit: 5)"
+            )
+    
+    comment_doc = {
+        "id": comment_id,
+        "tweet_id": tweet_id,
+        "user_id": current_user["id"],
+        "content": comment.content,
+        "created_at": created_at,
+        "parent_id": comment.parent_id,
+        "path": path,
+        "depth": depth,
+        "replies_count": 0
+    }
+    
+    # Insert comment into MongoDB
+    comments_collection.insert_one(comment_doc)
+    
+    # If this is a reply, increment the parent's replies_count
+    if comment.parent_id:
+        comments_collection.update_one(
+            {"id": comment.parent_id},
+            {"$inc": {"replies_count": 1}}
+        )
+    
+    # Publish comment created event if Kafka is available
+    if kafka_producer:
+        kafka_producer.send("comments", {
+            "event": "comment_created",
+            "comment_id": comment_id,
+            "tweet_id": tweet_id,
+            "user_id": current_user["id"],
+            "content": comment.content,
+            "created_at": created_at.isoformat(),
+            "parent_id": comment.parent_id,
+            "path": path,
+            "depth": depth
+        })
+    
+    return {
+        "id": comment_id,
+        "tweet_id": tweet_id,
+        "user_id": current_user["id"],
+        "username": current_user["username"],
+        "content": comment.content,
+        "created_at": created_at,
+        "likes_count": 0,
+        "parent_id": comment.parent_id,
+        "path": path,
+        "depth": depth,
+        "replies_count": 0
+    }
+@app.get("/tweets/{tweet_id}/comments", response_model=List[CommentResponse])
+def get_tweet_comments(
+    tweet_id: str,
+    parent_id: Optional[str] = None,
+    flat: bool = False,
+    limit: int = 50,
+    current_user = Depends(get_current_user_optional),  # Changed to optional authentication
+    mongo_client = Depends(get_mongo_client),
+    conn = Depends(get_pg_conn)
+):
+    """Get comments for a tweet with optional filtering by parent_id"""
+    # MongoDB collections
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Build query
+    query = {"tweet_id": tweet_id}
+    
+    # If specific parent is requested, filter by it
+    if parent_id is not None:
+        query["parent_id"] = parent_id
+    elif not flat:
+        # If hierarchical and no parent specified, get top-level comments only
+        query["parent_id"] = None
+    
+    # Get comments
+    comments = list(comments_collection.find(
+        query,
+        sort=[("created_at", -1)],
+        limit=limit
+    ))
+    
+    # Get usernames for comment authors
+    user_ids = set(comment["user_id"] for comment in comments)
+    
+    usernames = {}
+    if user_ids:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            if len(user_ids) > 0:
+                user_ids_tuple = tuple(user_ids)
+                # If only one ID, we need to make it a proper tuple
+                if len(user_ids) == 1:
+                    user_ids_tuple = (list(user_ids)[0],)
+                cursor.execute(
+                    "SELECT id, username FROM users WHERE id IN %s",
+                    (user_ids_tuple,)
+                )
+                usernames = {row["id"]: row["username"] for row in cursor.fetchall()}
+            cursor.close()
+        except Exception as e:
+            print(f"Error fetching usernames: {e}")
+    
+    # Format and return comments
+    formatted_comments = []
+    for comment in comments:
+        # Convert MongoDB ObjectId to string if necessary
+        if "_id" in comment:
+            del comment["_id"]
+        
+        # Ensure these fields exist
+        if "path" not in comment:
+            comment["path"] = [comment["id"]]
+        if "depth" not in comment:
+            comment["depth"] = 0
+        if "replies_count" not in comment:
+            comment["replies_count"] = 0
+        
+        formatted_comments.append({
+            **comment,
+            "username": usernames.get(comment["user_id"], "Unknown"),
+            "likes_count": 0  # In a real app, we might query Cassandra for this
+        })
+    
+    return formatted_comments
+
+@app.get("/comments/{comment_id}/replies", response_model=List[CommentResponse])
+def get_comment_replies(
+    comment_id: str,
+    limit: int = 20,
+    current_user = Depends(get_current_user_optional),  # Changed to optional authentication
+    mongo_client = Depends(get_mongo_client),
+    conn = Depends(get_pg_conn)
+):
+    """Get replies to a specific comment"""
+    # MongoDB collections
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Find the original comment first to validate
+    parent_comment = comments_collection.find_one({"id": comment_id})
+    if not parent_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Get direct replies to this comment
+    replies = list(comments_collection.find(
+        {"parent_id": comment_id},
+        sort=[("created_at", -1)],
+        limit=limit
+    ))
+    
+    # Get usernames for reply authors
+    user_ids = set(reply["user_id"] for reply in replies)
+    
+    usernames = {}
+    if user_ids:
+        try:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            if len(user_ids) > 0:
+                user_ids_tuple = tuple(user_ids)
+                # If only one ID, we need to make it a proper tuple
+                if len(user_ids) == 1:
+                    user_ids_tuple = (list(user_ids)[0],)
+                cursor.execute(
+                    "SELECT id, username FROM users WHERE id IN %s",
+                    (user_ids_tuple,)
+                )
+                usernames = {row["id"]: row["username"] for row in cursor.fetchall()}
+            cursor.close()
+        except Exception as e:
+            print(f"Error fetching usernames for replies: {e}")
+    
+    # Format and return replies
+    formatted_replies = []
+    for reply in replies:
+        # Convert MongoDB ObjectId to string if necessary
+        if "_id" in reply:
+            del reply["_id"]
+        
+        # Ensure these fields exist
+        if "path" not in reply:
+            reply["path"] = [parent_comment.get("id"), reply["id"]]
+        if "depth" not in reply:
+            reply["depth"] = parent_comment.get("depth", 0) + 1
+        if "replies_count" not in reply:
+            reply["replies_count"] = 0
+        
+        formatted_replies.append({
+            **reply,
+            "username": usernames.get(reply["user_id"], "Unknown"),
+            "likes_count": 0
+        })
+    
+    return formatted_replies
+
+@app.delete("/comments/{comment_id}")
+def delete_comment(
+    comment_id: str,
+    current_user = Depends(get_current_user),
+    mongo_client = Depends(get_mongo_client)
+):
+    """Delete a comment and handle nested comment relationships"""
+    # MongoDB collection
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Find the comment
+    comment = comments_collection.find_one({"id": comment_id})
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check if user is the author of the comment
+    if comment["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="You can only delete your own comments")
+    
+    # Mark as deleted (soft deletion approach)
+    comments_collection.update_one(
+        {"id": comment_id},
+        {
+            "$set": {
+                "content": "[deleted]",
+                "is_deleted": True,
+                "deleted_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    # Publish comment deleted event if Kafka is available
+    if kafka_producer:
+        kafka_producer.send("comments", {
+            "event": "comment_deleted",
+            "comment_id": comment_id,
+            "tweet_id": comment["tweet_id"],
+            "user_id": current_user["id"],
+            "created_at": datetime.utcnow().isoformat()
+        })
+    
+    return {"status": "success", "message": "Comment deleted"}
+
+# Get all descendants of a comment (for admin/moderation purposes)
+@app.get("/comments/{comment_id}/tree", response_model=List[CommentResponse])
+def get_comment_tree(
+    comment_id: str,
+    current_user = Depends(get_current_user_optional),  # Changed to optional authentication
+    mongo_client = Depends(get_mongo_client),
+    conn = Depends(get_pg_conn)
+):
+    """Get a comment and all its nested replies (the entire subtree)"""
+    # MongoDB collections
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Find the original comment first to validate
+    root_comment = comments_collection.find_one({"id": comment_id})
+    if not root_comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Query MongoDB with path match (finds all comments with root comment ID in their path)
+    # This works because path contains the full ancestry chain
+    comments = list(comments_collection.find(
+        {"path": {"$elemMatch": {"$eq": comment_id}}},
+        sort=[("created_at", 1)]  # Sort by creation time
+    ))
+    
+    # Get usernames for all comment authors
+    user_ids = set(comment["user_id"] for comment in comments)
+    
+    usernames = {}
+    if user_ids:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        if len(user_ids) > 0:
+            user_ids_tuple = tuple(user_ids)
+            # If only one ID, we need to make it a proper tuple
+            if len(user_ids) == 1:
+                user_ids_tuple = (list(user_ids)[0],)
+            cursor.execute(
+                "SELECT id, username FROM users WHERE id IN %s",
+                (user_ids_tuple,)
+            )
+            usernames = {row["id"]: row["username"] for row in cursor.fetchall()}
+        
+        cursor.close()
+    
+    # Format and return all comments in the subtree
+    formatted_comments = []
+    for comment in comments:
+        # Convert MongoDB ObjectId to string if necessary
+        if "_id" in comment:
+            del comment["_id"]
+        
+        formatted_comments.append({
+            **comment,
+            "username": usernames.get(comment["user_id"], "Unknown"),
+            "likes_count": 0
+        })
+    
+    return formatted_comments
+
+
+# Tweet and media routes
+@app.post("/upload/image")
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user = Depends(get_current_user)
+):
+    """Upload an image to Minio storage"""
+    if not minio_client:
+        # Provide more helpful error and fallback
+        return {
+            "error": "Storage service is not available",
+            "message": "The storage service (Minio) is not currently available. Your image was not saved.",
+            "debug_info": {
+                "tried_hostnames": MINIO_HOSTNAME_OPTIONS,
+                "selected_hostname": selected_hostname
+            },
+            "url": "http://localhost:9000/placeholder-image.jpg"  # Placeholder URL
+        }
+    
+    # Validate file type
+    content_type = file.content_type
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    
+    try:
+        # Read file content
+        file_data = await file.read()
+        
+        # Generate a unique filename
+        ext = os.path.splitext(file.filename)[1]
+        filename = f"{current_user['id']}/{uuid4()}{ext}"
+        
+        print(f"Uploading file {filename} to Minio bucket {MINIO_BUCKET}")
+        
+        # Upload to Minio
+        minio_client.put_object(
+            bucket_name=MINIO_BUCKET,
+            object_name=filename,
+            data=io.BytesIO(file_data),
+            length=len(file_data),
+            content_type=content_type
+        )
+        
+        # Return the URL with localhost instead of container name
+        image_url = f"http://localhost:9000/{MINIO_BUCKET}/{filename}"
+        print(f"Generated URL: {image_url}")
+        
+        return {"url": image_url}
+    
+    except minio.error.S3Error as e:
+        print(f"Minio S3Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading to storage: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
 @app.post("/tweets", response_model=TweetResponse)
-def create_tweet(tweet: Tweet, current_user = Depends(get_current_user), mongo_client = Depends(get_mongo_client)):
+def create_tweet(
+    content: str = Form(...),
+    media_urls: Optional[str] = Form(None),
+    current_user = Depends(get_current_user),
+    mongo_client = Depends(get_mongo_client)
+):
     tweets_collection = mongo_client.mini_twitter.tweets
     
     # Extract hashtags (words starting with #)
-    hashtags = [word[1:] for word in tweet.content.split() if word.startswith('#')]
+    hashtags = [word[1:] for word in content.split() if word.startswith('#')]
+    
+    # Parse media_urls from string to list, if provided
+    media_urls_list = []
+    if media_urls:
+        try:
+            print(f"Received media_urls: {media_urls}")
+            # Try to parse as JSON
+            try:
+                media_urls_list = json.loads(media_urls)
+                if not isinstance(media_urls_list, list):
+                    media_urls_list = [media_urls]
+            except json.JSONDecodeError as e:
+                print(f"JSON parsing error: {e}. Treating as single URL.")
+                # If parsing fails, treat as a single URL
+                media_urls_list = [media_urls]
+            
+            print(f"Initial media_urls_list: {media_urls_list}")
+            
+            # Ensure all URLs use localhost:9000 instead of minio:9000
+            fixed_urls = []
+            for url in media_urls_list:
+                # Skip empty URLs
+                if not url:
+                    continue
+                    
+                # Standardize URL format
+                if "minio:9000" in url:
+                    fixed_url = url.replace("minio:9000", "localhost:9000")
+                    print(f"Fixed URL from {url} to {fixed_url}")
+                    fixed_urls.append(fixed_url)
+                else:
+                    # Ensure URL has the correct domain format
+                    if "://localhost:9000" not in url and "mini-twitter" in url:
+                        # This looks like a relative path, add the domain
+                        fixed_url = f"http://localhost:9000/{url.lstrip('/')}"
+                        print(f"Added domain to URL: {fixed_url}")
+                        fixed_urls.append(fixed_url)
+                    else:
+                        # URL looks good, pass it through
+                        fixed_urls.append(url)
+                        print(f"URL kept as is: {url}")
+            
+            # Update the list with fixed URLs
+            media_urls_list = fixed_urls
+            print(f"Final media_urls_list: {media_urls_list}")
+        except Exception as e:
+            # Catch any unexpected errors in URL processing
+            print(f"Error processing media URLs: {e}")
+            # Use empty list if there was an error
+            media_urls_list = []
     
     tweet_id = str(uuid.uuid4())
     created_at = datetime.utcnow()
+    
+    # Double-check media URLs before storing
+    checked_urls = []
+    for url in media_urls_list:
+        if url and isinstance(url, str):
+            # Final sanity check
+            if "minio:9000" in url:
+                url = url.replace("minio:9000", "localhost:9000")
+            checked_urls.append(url)
     
     # Store tweet in MongoDB
     tweet_doc = {
         "id": tweet_id,
         "user_id": current_user["id"],
-        "content": tweet.content,
+        "content": content,
         "hashtags": hashtags,
         "created_at": created_at,
-        "media_urls": tweet.media_urls or []
+        "media_urls": checked_urls  # Use the thoroughly checked URLs
     }
+    
+    # Log what's being saved to MongoDB
+    print(f"Saving tweet with media_urls: {checked_urls}")
+    
     tweets_collection.insert_one(tweet_doc)
     
     # Publish tweet created event
@@ -326,9 +1209,9 @@ def create_tweet(tweet: Tweet, current_user = Depends(get_current_user), mongo_c
             "event": "tweet_created",
             "tweet_id": tweet_id,
             "user_id": current_user["id"],
-            "content": tweet.content,
+            "content": content,
             "hashtags": hashtags,
-            "media_urls": tweet.media_urls or [],
+            "media_urls": checked_urls,  # Use the same URLs here
             "created_at": created_at.isoformat()
         })
     
@@ -336,21 +1219,254 @@ def create_tweet(tweet: Tweet, current_user = Depends(get_current_user), mongo_c
         "id": tweet_id,
         "user_id": current_user["id"],
         "username": current_user["username"],
-        "content": tweet.content,
+        "content": content,
         "hashtags": hashtags,
         "created_at": created_at,
         "likes_count": 0,
-        "media_urls": tweet.media_urls or []
+        "media_urls": checked_urls  # And here
     }
 
+@app.get("/tweets/{tweet_id}/like-status")
+def get_tweet_like_status(
+    tweet_id: str,
+    current_user = Depends(get_current_user),
+    cassandra_session = Depends(get_cassandra_session)
+):
+    """Check if the current user has liked a tweet"""
+    try:
+        # Query Cassandra for like status
+        rows = cassandra_session.execute(
+            "SELECT * FROM mini_twitter.likes WHERE tweet_id = %s AND user_id = %s",
+            (tweet_id, current_user["id"])
+        )
+        
+        # If any rows are returned, the user has liked the tweet
+        is_liked = len(list(rows)) > 0
+        
+        return {"is_liked": is_liked}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking like status: {str(e)}")
+
+# 3. Enhanced unlike_tweet endpoint with counter decrement
+@app.post("/tweets/{tweet_id}/unlike")
+def unlike_tweet(
+    tweet_id: str, 
+    current_user = Depends(get_current_user), 
+    cassandra_session = Depends(get_cassandra_session)
+):
+    """Remove a like from a tweet and decrement its counter"""
+    # Check if like exists
+    rows = cassandra_session.execute(
+        "SELECT * FROM mini_twitter.likes WHERE tweet_id = %s AND user_id = %s",
+        (tweet_id, current_user["id"])
+    )
+    
+    like_exists = len(list(rows)) > 0
+    
+    if like_exists:
+        # Delete the like from Cassandra
+        cassandra_session.execute(
+            "DELETE FROM mini_twitter.likes WHERE tweet_id = %s AND user_id = %s",
+            (tweet_id, current_user["id"])
+        )
+        
+        # Get the current count before decrementing
+        rows = cassandra_session.execute(
+            "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+            (tweet_id,)
+        )
+        
+        current_count = 0
+        for row in rows:
+            current_count = row.count
+            break
+        
+        # Only decrement if count is positive
+        if current_count > 0:
+            cassandra_session.execute(
+                "UPDATE mini_twitter.like_counts SET count = count - 1 WHERE tweet_id = %s",
+                (tweet_id,)
+            )
+        
+        # Publish unlike event
+        if kafka_producer:
+            kafka_producer.send("likes", {
+                "event": "tweet_unliked",
+                "tweet_id": tweet_id,
+                "user_id": current_user["id"],
+                "created_at": datetime.utcnow().isoformat()
+            })
+    
+    # Get the current count after update
+    rows = cassandra_session.execute(
+        "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+        (tweet_id,)
+    )
+    
+    count = 0
+    for row in rows:
+        count = row.count
+        break
+    
+    # Ensure count is always non-negative
+    count = max(0, count)
+    
+    return {"status": "success", "likes_count": count}
+
+# 4. Enhanced get_tweets function to include like counts
+@app.get("/tweets")
+def get_tweets(
+    user_id: Optional[str] = None,
+    limit: int = 20,
+    current_user = Depends(get_current_user_optional),
+    mongo_client = Depends(get_mongo_client),
+    conn = Depends(get_pg_conn),
+    cassandra_session = Depends(get_cassandra_session)
+):
+    """
+    Get tweets with optional user_id filter and accurate like counts.
+    """
+    tweets_collection = mongo_client.mini_twitter.tweets
+    
+    # Build query
+    query = {}
+    if user_id:
+        query["user_id"] = user_id
+    
+    # Fetch tweets
+    tweets = list(tweets_collection.find(
+        query,
+        sort=[("created_at", -1)],
+        limit=limit
+    ))
+    
+    # Get usernames
+    user_ids = set(t["user_id"] for t in tweets)
+    if current_user:
+        user_ids.add(current_user["id"])  # Add current user
+    
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    if user_ids and len(user_ids) > 0:
+        user_ids_tuple = tuple(user_ids)
+        # If only one ID, we need to make it a proper tuple
+        if len(user_ids) == 1:
+            user_ids_tuple = (list(user_ids)[0],)
+            
+        cursor.execute(
+            "SELECT id, username FROM users WHERE id IN %s",
+            (user_ids_tuple,)
+        )
+        usernames = {row["id"]: row["username"] for row in cursor.fetchall()}
+    else:
+        usernames = {}
+    
+    cursor.close()
+    
+    # Format response
+    formatted_tweets = []
+    for tweet in tweets:
+        # Convert MongoDB ObjectId to string if necessary
+        if "_id" in tweet:
+            del tweet["_id"]
+            
+        # Ensure media_urls is always a list and fix URLs if needed
+        if "media_urls" not in tweet:
+            tweet["media_urls"] = []
+        else:
+            # Fix URLs if needed
+            fixed_urls = []
+            for url in tweet["media_urls"]:
+                if "minio:9000" in url:
+                    fixed_url = url.replace("minio:9000", "localhost:9000")
+                    fixed_urls.append(fixed_url)
+                else:
+                    fixed_urls.append(url)
+            
+            tweet["media_urls"] = fixed_urls
+            
+        formatted_tweets.append({
+            **tweet,
+            "username": usernames.get(tweet["user_id"], "Unknown"),
+            "likes_count": 0  # Initialize to 0, will be updated
+        })
+    
+    # Enhance tweets with like counts
+    enhanced_tweets = enhance_tweets_with_likes(formatted_tweets, cassandra_session)
+    
+    return enhanced_tweets
+# Add this to the end of your FastAPI app file
+
+@app.get("/tweets/{tweet_id}/comments/count")
+def get_tweet_comments_count(
+    tweet_id: str,
+    current_user = Depends(get_current_user_optional),
+    mongo_client = Depends(get_mongo_client)
+):
+    """Get the total number of comments for a tweet, including replies"""
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Count all comments associated with this tweet
+    comment_count = comments_collection.count_documents({"tweet_id": tweet_id})
+    
+    return {"count": comment_count}
+# Add these endpoints to your FastAPI app file
+
+@app.get("/tweets/{tweet_id}/retweets/count")
+def get_tweet_retweets_count(
+    tweet_id: str,
+    current_user = Depends(get_current_user_optional),
+    mongo_client = Depends(get_mongo_client)
+):
+    """Get the number of retweets for a tweet"""
+    tweets_collection = mongo_client.mini_twitter.tweets
+    
+    # Count tweets that have retweeted this tweet
+    retweet_count = tweets_collection.count_documents({"retweeted_from": tweet_id})
+    
+    return {"count": retweet_count}
+
+@app.get("/tweets/{tweet_id}/retweet-status")
+def check_retweet_status(
+    tweet_id: str,
+    current_user = Depends(get_current_user),
+    mongo_client = Depends(get_mongo_client)
+):
+    """Check if the current user has retweeted a tweet"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+        
+    tweets_collection = mongo_client.mini_twitter.tweets
+    
+    # Check if user has retweeted this tweet
+    retweet = tweets_collection.find_one({
+        "retweeted_from": tweet_id,
+        "user_id": current_user["id"]
+    })
+    
+    # If this is a retweet, also check if the user has retweeted the original
+    if not retweet:
+        # Get the original tweet to check if this is a retweet
+        tweet = tweets_collection.find_one({"id": tweet_id})
+        if tweet and "retweeted_from" in tweet:
+            # If this is a retweet, check if user has retweeted the original
+            retweet = tweets_collection.find_one({
+                "retweeted_from": tweet["retweeted_from"],
+                "user_id": current_user["id"]
+            })
+    
+    return {"is_retweeted": retweet is not None}
+
+# 5. Enhanced get_tweet endpoint to include like count
 @app.get("/tweets/{tweet_id}")
 def get_tweet(
     tweet_id: str,
-    current_user = Depends(get_current_user),
+    current_user = Depends(get_current_user_optional),
     mongo_client = Depends(get_mongo_client),
-    conn = Depends(get_pg_conn)
+    conn = Depends(get_pg_conn),
+    cassandra_session = Depends(get_cassandra_session)
 ):
-    """Get a single tweet by ID"""
+    """Get a single tweet by ID with accurate like count"""
     tweets_collection = mongo_client.mini_twitter.tweets
     
     # Get the tweet
@@ -371,77 +1487,84 @@ def get_tweet(
     if "_id" in tweet:
         del tweet["_id"]
     
-    # Add username and likes count
+    # Add username and initialize likes count
     tweet["username"] = user["username"] if user else "Unknown"
-    tweet["likes_count"] = 0  # In a real app, query Cassandra for this
+    tweet["likes_count"] = 0  # Initialize to 0, will be updated
+    
+    # Ensure media_urls is always a list and fix URLs if needed
+    if "media_urls" not in tweet:
+        tweet["media_urls"] = []
+    else:
+        # Fix URLs if needed
+        fixed_urls = []
+        for url in tweet["media_urls"]:
+            if "minio:9000" in url:
+                fixed_url = url.replace("minio:9000", "localhost:9000")
+                fixed_urls.append(fixed_url)
+            else:
+                fixed_urls.append(url)
+        
+        tweet["media_urls"] = fixed_urls
+    
+    # Get like count from Cassandra
+    try:
+        # Check if the counter exists
+        rows = cassandra_session.execute(
+            "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+            (tweet_id,)
+        )
+        
+        count = 0
+        count_exists = False
+        for row in rows:
+            count = row.count
+            count_exists = True
+            break
+        
+        # If counter doesn't exist, initialize it
+        if not count_exists:
+            # Count likes for this tweet
+            likes_rows = cassandra_session.execute(
+                "SELECT COUNT(*) FROM mini_twitter.likes WHERE tweet_id = %s",
+                (tweet_id,)
+            )
+            
+            like_count = 0
+            for row in likes_rows:
+                like_count = row[0]
+                break
+            
+            # Initialize the counter
+            if like_count > 0:
+                # Initialize with the correct count
+                for _ in range(like_count):
+                    cassandra_session.execute(
+                        "UPDATE mini_twitter.like_counts SET count = count + 1 WHERE tweet_id = %s",
+                        (tweet_id,)
+                    )
+                count = like_count
+            else:
+                # Initialize with zero
+                cassandra_session.execute(
+                    "UPDATE mini_twitter.like_counts SET count = count + 0 WHERE tweet_id = %s",
+                    (tweet_id,)
+                )
+        
+        # Ensure count is always non-negative
+        tweet["likes_count"] = max(0, count)
+    except Exception as e:
+        print(f"Error fetching like count: {e}")
     
     return tweet
 
-@app.get("/tweets")
-def get_tweets(
-    user_id: Optional[str] = None,
-    limit: int = 20,
-    current_user = Depends(get_current_user),
-    mongo_client = Depends(get_mongo_client),
-    conn = Depends(get_pg_conn)
-):
-    """
-    Get tweets with optional user_id filter.
-    If user_id is provided, returns tweets from that user only.
-    """
-    tweets_collection = mongo_client.mini_twitter.tweets
-    
-    # Build query
-    query = {}
-    if user_id:
-        query["user_id"] = user_id
-    
-    # Fetch tweets
-    tweets = list(tweets_collection.find(
-        query,
-        sort=[("created_at", -1)],
-        limit=limit
-    ))
-    
-    # Get usernames
-    user_ids = set(t["user_id"] for t in tweets)
-    user_ids.add(current_user["id"])  # Add current user
-    
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    if user_ids:
-        cursor.execute(
-            "SELECT id, username FROM users WHERE id IN %s",
-            (tuple(user_ids),)
-        )
-        usernames = {row["id"]: row["username"] for row in cursor.fetchall()}
-    else:
-        usernames = {}
-    
-    cursor.close()
-    
-    # Format response
-    formatted_tweets = []
-    for tweet in tweets:
-        # Convert MongoDB ObjectId to string if necessary
-        if "_id" in tweet:
-            del tweet["_id"]
-            
-        formatted_tweets.append({
-            **tweet,
-            "username": usernames.get(tweet["user_id"], "Unknown"),
-            "likes_count": 0  # In a real app, we'd query Cassandra for this
-        })
-    
-    return formatted_tweets
-
+# 2. Enhanced like_tweet endpoint with counter
 @app.post("/tweets/{tweet_id}/like")
 def like_tweet(
     tweet_id: str, 
     current_user = Depends(get_current_user), 
     cassandra_session = Depends(get_cassandra_session)
 ):
-    # Store like in Cassandra
+    """Like a tweet and increment its like counter"""
     timestamp = datetime.utcnow()
     
     # Create keyspace if not exists
@@ -455,7 +1578,7 @@ def like_tweet(
         """
     )
     
-    # Create table if not exists
+    # Create table if not exists for individual likes
     cassandra_session.execute(
         """
         CREATE TABLE IF NOT EXISTS mini_twitter.likes (
@@ -467,21 +1590,61 @@ def like_tweet(
         """
     )
     
+    # Create counter table if not exists
     cassandra_session.execute(
-        "INSERT INTO mini_twitter.likes (tweet_id, user_id, created_at) VALUES (%s, %s, %s)",
-        (tweet_id, current_user["id"], timestamp)
+        """
+        CREATE TABLE IF NOT EXISTS mini_twitter.like_counts (
+            tweet_id TEXT PRIMARY KEY,
+            count COUNTER
+        )
+        """
     )
     
-    # Publish like event
-    if kafka_producer:
-        kafka_producer.send("likes", {
-            "event": "tweet_liked",
-            "tweet_id": tweet_id,
-            "user_id": current_user["id"],
-            "created_at": timestamp.isoformat()
-        })
+    # Check if already liked to avoid duplicates
+    rows = cassandra_session.execute(
+        "SELECT * FROM mini_twitter.likes WHERE tweet_id = %s AND user_id = %s",
+        (tweet_id, current_user["id"])
+    )
     
-    return {"status": "success"}
+    already_liked = len(list(rows)) > 0
+    
+    if not already_liked:
+        # Insert the like record
+        cassandra_session.execute(
+            "INSERT INTO mini_twitter.likes (tweet_id, user_id, created_at) VALUES (%s, %s, %s)",
+            (tweet_id, current_user["id"], timestamp)
+        )
+        
+        # Increment the counter
+        cassandra_session.execute(
+            "UPDATE mini_twitter.like_counts SET count = count + 1 WHERE tweet_id = %s",
+            (tweet_id,)
+        )
+        
+        # Publish like event
+        if kafka_producer:
+            kafka_producer.send("likes", {
+                "event": "tweet_liked",
+                "tweet_id": tweet_id,
+                "user_id": current_user["id"],
+                "created_at": timestamp.isoformat()
+            })
+    
+    # Get the current count
+    rows = cassandra_session.execute(
+        "SELECT count FROM mini_twitter.like_counts WHERE tweet_id = %s",
+        (tweet_id,)
+    )
+    
+    count = 0
+    for row in rows:
+        count = row.count
+        break
+    
+    # Ensure count is always non-negative
+    count = max(0, count)
+    
+    return {"status": "success", "likes_count": count}
 
 @app.post("/tweets/{tweet_id}/retweet")
 def retweet(
@@ -506,6 +1669,16 @@ def retweet(
     if existing_retweet:
         raise HTTPException(status_code=400, detail="You have already retweeted this tweet")
     
+    # Fix media URLs if needed
+    media_urls = original_tweet.get("media_urls", [])
+    fixed_media_urls = []
+    for url in media_urls:
+        if "minio:9000" in url:
+            fixed_url = url.replace("minio:9000", "localhost:9000")
+            fixed_media_urls.append(fixed_url)
+        else:
+            fixed_media_urls.append(url)
+    
     # Create retweet
     retweet_id = str(uuid.uuid4())
     created_at = datetime.utcnow()
@@ -518,7 +1691,7 @@ def retweet(
         "created_at": created_at,
         "retweeted_from": tweet_id,
         "original_user_id": original_tweet["user_id"],
-        "media_urls": original_tweet.get("media_urls", [])
+        "media_urls": fixed_media_urls
     }
     
     tweets_collection.insert_one(retweet_doc)
@@ -542,7 +1715,8 @@ def retweet(
 @app.post("/tweets/{tweet_id}/reply")
 def reply_to_tweet(
     tweet_id: str,
-    reply: Tweet,
+    content: str = Form(...),
+    media_urls: Optional[str] = Form(None),
     current_user = Depends(get_current_user),
     mongo_client = Depends(get_mongo_client)
 ):
@@ -555,7 +1729,29 @@ def reply_to_tweet(
         raise HTTPException(status_code=404, detail="Tweet not found")
     
     # Extract hashtags
-    hashtags = [word[1:] for word in reply.content.split() if word.startswith('#')]
+    hashtags = [word[1:] for word in content.split() if word.startswith('#')]
+    
+    # Parse media_urls from string to list, if provided
+    media_urls_list = []
+    if media_urls:
+        try:
+            media_urls_list = json.loads(media_urls)
+            if not isinstance(media_urls_list, list):
+                media_urls_list = [media_urls]
+        except:
+            # If parsing fails, treat as a single URL
+            media_urls_list = [media_urls]
+        
+        # Fix URLs if needed
+        fixed_urls = []
+        for url in media_urls_list:
+            if "minio:9000" in url:
+                fixed_url = url.replace("minio:9000", "localhost:9000")
+                fixed_urls.append(fixed_url)
+            else:
+                fixed_urls.append(url)
+        
+        media_urls_list = fixed_urls
     
     # Create reply
     reply_id = str(uuid.uuid4())
@@ -564,12 +1760,12 @@ def reply_to_tweet(
     reply_doc = {
         "id": reply_id,
         "user_id": current_user["id"],
-        "content": reply.content,
+        "content": content,
         "hashtags": hashtags,
         "created_at": created_at,
         "in_reply_to": tweet_id,
         "in_reply_to_user_id": parent_tweet["user_id"],
-        "media_urls": reply.media_urls or []
+        "media_urls": media_urls_list
     }
     
     tweets_collection.insert_one(reply_doc)
@@ -581,9 +1777,9 @@ def reply_to_tweet(
             "tweet_id": reply_id,
             "parent_tweet_id": tweet_id,
             "user_id": current_user["id"],
-            "content": reply.content,
+            "content": content,
             "hashtags": hashtags,
-            "media_urls": reply.media_urls or [],
+            "media_urls": media_urls_list,
             "created_at": created_at.isoformat()
         })
     
@@ -591,12 +1787,12 @@ def reply_to_tweet(
         "id": reply_id,
         "user_id": current_user["id"],
         "username": current_user["username"],
-        "content": reply.content,
+        "content": content,
         "hashtags": hashtags,
         "created_at": created_at,
         "in_reply_to": tweet_id,
         "likes_count": 0,
-        "media_urls": reply.media_urls or []
+        "media_urls": media_urls_list
     }
 
 @app.get("/tweets/{tweet_id}/replies")
@@ -640,6 +1836,21 @@ def get_tweet_replies(
         if "_id" in reply:
             del reply["_id"]
             
+        # Ensure media_urls is always a list and fix URLs if needed
+        if "media_urls" not in reply:
+            reply["media_urls"] = []
+        else:
+            # Fix URLs if needed
+            fixed_urls = []
+            for url in reply["media_urls"]:
+                if "minio:9000" in url:
+                    fixed_url = url.replace("minio:9000", "localhost:9000")
+                    fixed_urls.append(fixed_url)
+                else:
+                    fixed_urls.append(url)
+            
+            reply["media_urls"] = fixed_urls
+        
         formatted_replies.append({
             **reply,
             "username": usernames.get(reply["user_id"], "Unknown"),
@@ -754,17 +1965,32 @@ def get_timeline(current_user = Depends(get_current_user), conn = Depends(get_pg
         if "_id" in tweet:
             del tweet["_id"]
             
+        # Ensure media_urls is always a list and fix URLs if needed
+        if "media_urls" not in tweet:
+            tweet["media_urls"] = []
+        else:
+            # Fix URLs if needed
+            fixed_urls = []
+            for url in tweet["media_urls"]:
+                if "minio:9000" in url:
+                    fixed_url = url.replace("minio:9000", "localhost:9000")
+                    fixed_urls.append(fixed_url)
+                else:
+                    fixed_urls.append(url)
+            
+            tweet["media_urls"] = fixed_urls
+            
         timeline.append({
             **tweet,
             "username": usernames.get(tweet["user_id"], "Unknown"),
             "likes_count": 0,  # In a real app, we'd query Cassandra for this
-            "media_urls": tweet.get("media_urls", [])
         })
     
     return timeline
 
 @app.get("/trending")
 def get_trending_hashtags(mongo_client = Depends(get_mongo_client)):
+    """Get trending hashtags in the last hour"""
     # This is a simplified implementation
     # In a real app, this would use Spark MLlib for more sophisticated trending detection
     
@@ -783,56 +2009,37 @@ def get_trending_hashtags(mongo_client = Depends(get_mongo_client)):
     trending = list(tweets_collection.aggregate(pipeline))
     return [{"hashtag": t["_id"], "count": t["count"]} for t in trending]
 
-@app.post("/media/upload")
-async def upload_media(
-    file: UploadFile = File(...),
-    current_user = Depends(get_current_user)
-):
-    """Upload a media file to S3/Minio"""
-    if not s3_client:
-        raise HTTPException(status_code=503, detail="S3/Minio service not available")
-    
-    # Check file size (limit to 5MB)
-    file_size = 0
-    contents = await file.read()
-    file_size = len(contents)
-    
-    if file_size > 5 * 1024 * 1024:  # 5MB
-        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
-    
-    # Check file type
-    content_type = file.content_type
-    if not content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="Only image files are allowed")
-    
-    # Generate unique filename
-    file_ext = file.filename.split('.')[-1] if '.' in file.filename else ''
-    unique_filename = f"{current_user['id']}/{uuid.uuid4()}.{file_ext}"
-    
-    # Upload to S3/Minio
-    try:
-        s3_client.put_object(
-            Bucket=S3_BUCKET,
-            Key=unique_filename,
-            Body=contents,
-            ContentType=content_type
-        )
-        
-        # Generate URL
-        url = f"{S3_ENDPOINT}/{S3_BUCKET}/{unique_filename}"
-        
-        return {"url": url, "filename": unique_filename}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
-
 # Database Explorer Endpoints
 db_router = APIRouter(prefix="/db", tags=["database"])
+
+@db_router.get("/cassandra/{keyspace}/{table}")
+def get_cassandra_data(keyspace: str, table: str, limit: int = 100, cassandra_session = Depends(get_cassandra_session)):
+    """Get data from a Cassandra table"""
+    try:
+        cassandra_session.set_keyspace(keyspace)
+        rows = cassandra_session.execute(f"SELECT * FROM {table} LIMIT {limit}")
+        
+        # Convert to list of dicts
+        result = []
+        for row in rows:
+            row_dict = {}
+            for key in row._fields:
+                value = getattr(row, key)
+                # Handle non-serializable types
+                if hasattr(value, 'isoformat'):  # For datetime objects
+                    value = value.isoformat()
+                row_dict[key] = value
+            result.append(row_dict)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @db_router.post("/postgres")
 def execute_postgres_query(query_data: PostgresQuery, conn = Depends(get_pg_conn)):
     """Execute a PostgreSQL query and return the results"""
     try:
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(query_data.query)
         
         # Check if this is a SELECT query
@@ -862,3 +2069,38 @@ def get_mongodb_data(collection: str, limit: int = 100, mongo_client = Depends(g
         return documents
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Function to create MongoDB indexes for nested comments
+def create_comment_indexes(mongo_client):
+    """Create MongoDB indexes for efficient comment queries"""
+    comments_collection = mongo_client.mini_twitter.comments
+    
+    # Index for fetching comments by tweet_id and parent_id (main listing query)
+    comments_collection.create_index([("tweet_id", 1), ("parent_id", 1)])
+    
+    # Index for fetching replies to a specific comment
+    comments_collection.create_index([("parent_id", 1)])
+    
+    # Index for path-based queries (finding all descendants)
+    comments_collection.create_index([("path", 1)])
+    
+    # Index for user's comments (profile page)
+    comments_collection.create_index([("user_id", 1)])
+    
+    print("Created indexes for nested comments")
+
+# Create indexes on application startup
+@app.on_event("startup")
+async def startup_event():
+    """Run startup tasks"""
+    # Connect to MongoDB
+    client = MongoClient(MONGODB_URL)
+    
+    # Create indexes for comments
+    create_comment_indexes(client)
+    
+    # Close the client
+    client.close()
+
+# Include database router
+app.include_router(db_router)

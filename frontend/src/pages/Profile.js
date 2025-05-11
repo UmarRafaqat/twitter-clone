@@ -1,43 +1,448 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { Link } from 'react-router-dom';
-import { Calendar, MapPin, Link as LinkIcon } from 'lucide-react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Calendar, MapPin, Link as LinkIcon, Camera } from 'lucide-react';
 import Tweet from '../components/Tweet';
-import tweetService from '../services/tweet.service';
+import FollowButton from '../components/FollowButton';
 import { AuthContext } from '../contexts/AuthContext';
 import moment from 'moment';
+import axios from 'axios';
+
+const API_URL = 'http://localhost:8000';
 
 const Profile = () => {
-  const { currentUser } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const authContext = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState('tweets');
   const [tweets, setTweets] = useState([]);
+  const [replies, setReplies] = useState([]);
+  const [mediaContent, setMediaContent] = useState([]);
+  const [likedTweets, setLikedTweets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+  const [editMode, setEditMode] = useState(false);
+  const [formData, setFormData] = useState({ bio: '' });
+  const [updateError, setUpdateError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+  const fileInputRef = useRef(null);
+  const [dbError, setDbError] = useState(null);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isOwnProfile, setIsOwnProfile] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [profileUserId, setProfileUserId] = useState(null);
+
+  // Safe access to currentUser and logout
+  const currentUser = authContext?.currentUser;
+  const logout = authContext?.logout;
+
+  // Initialize form data from current user and fetch follow counts
   useEffect(() => {
-    const fetchUserTweets = async () => {
+    if (currentUser) {
+      setFormData({
+        bio: currentUser.bio || '',
+      });
+      
+      // Set profile image if it exists
+      if (currentUser.profile_image_url) {
+        setPreviewImage(currentUser.profile_image_url);
+      }
+
+      // Set profile user ID to current user's ID by default (own profile)
+      setProfileUserId(currentUser.id);
+      setIsOwnProfile(true);
+
+      // Fetch followers and following counts
+      fetchFollowCounts(currentUser.id);
+    }
+  }, [currentUser]);
+
+  // Function to fetch followers and following counts
+  const fetchFollowCounts = async (userId) => {
+    if (!userId || !currentUser?.access_token) return;
+
+    try {
+      const headers = {
+        'Authorization': `Bearer ${currentUser.access_token}`
+      };
+
+      // Fetch followers count
+      const followersResponse = await axios.get(
+        `${API_URL}/users/${userId}/followers/count`,
+        { headers }
+      );
+      
+      // Fetch following count
+      const followingResponse = await axios.get(
+        `${API_URL}/users/${userId}/following/count`,
+        { headers }
+      );
+
+      setFollowersCount(followersResponse.data.count);
+      setFollowingCount(followingResponse.data.count);
+
+      // Check if current user is following this profile (if not own profile)
+      if (userId !== currentUser.id) {
+        try {
+          const followStatusResponse = await axios.get(
+            `${API_URL}/users/${userId}/follow-status`,
+            { headers }
+          );
+          setIsFollowing(followStatusResponse.data.is_following);
+        } catch (error) {
+          // If endpoint doesn't exist, default to false
+          setIsFollowing(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching follow counts:', error);
+    }
+  };
+
+  // Fetch user content based on active tab
+  useEffect(() => {
+    const fetchUserContent = async () => {
       try {
         setLoading(true);
-        // This would ideally be a specific API endpoint for user tweets
-        // For now, we'll use the timeline assuming it includes user's tweets
-        const response = await tweetService.getTimeline();
-        // Filter to only show the current user's tweets
-        const userTweets = response.data.filter(tweet => 
-          tweet.user_id === currentUser?.id || tweet.username === currentUser?.username
-        );
-        setTweets(userTweets);
+        if (!currentUser?.id || !currentUser?.access_token) {
+          setLoading(false);
+          return;
+        }
+
+        const headers = {
+          'Authorization': `Bearer ${currentUser.access_token}`
+        };
+
+        // Fetch appropriate content based on active tab
+        if (activeTab === 'tweets') {
+          const response = await axios.get(
+            `${API_URL}/tweets?user_id=${currentUser.id}`,
+            { headers }
+          );
+          setTweets(response.data || []);
+        } else if (activeTab === 'replies') {
+          // This would ideally be a specific endpoint for replies
+          // For now we'll simulate by getting all tweets and filtering
+          const response = await axios.get(
+            `${API_URL}/tweets?user_id=${currentUser.id}`,
+            { headers }
+          );
+          const userReplies = (response.data || []).filter(tweet => tweet.in_reply_to);
+          setReplies(userReplies);
+        } else if (activeTab === 'media') {
+          // Get tweets with media
+          const response = await axios.get(
+            `${API_URL}/tweets?user_id=${currentUser.id}`,
+            { headers }
+          );
+          const mediaTweets = (response.data || []).filter(tweet => 
+            tweet.media_urls && tweet.media_urls.length > 0
+          );
+          setMediaContent(mediaTweets);
+        } else if (activeTab === 'likes') {
+          // This would ideally be a specific endpoint for liked tweets
+          // For now, we'll set an empty array as the API doesn't support it yet
+          setLikedTweets([]);
+        }
       } catch (err) {
-        setError('Failed to load tweets');
-        console.error(err);
+        // Handle authentication errors
+        if (err.response?.status === 401) {
+          setError('Your session has expired. Please log in again.');
+          setTimeout(() => {
+            if (logout) logout();
+            navigate('/login');
+          }, 2000);
+        } else {
+          setError(`Failed to load ${activeTab}`);
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    if (currentUser) {
-      fetchUserTweets();
-    } else {
-      setLoading(false);
+    fetchUserContent();
+  }, [currentUser, logout, navigate, activeTab]);
+
+  // Handle image selection
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setUpdateError('Only image files are allowed');
+        return;
+      }
+      
+      // Validate file size (limit to 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setUpdateError('Image size must be less than 5MB');
+        return;
+      }
+      
+      setProfileImage(file);
+      setUpdateError('');
+      
+      // Create a preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewImage(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
-  }, [currentUser]);
+  };
+
+  // Trigger file input click
+  const triggerFileInput = () => {
+    fileInputRef.current.click();
+  };
+
+  // Manual update of user data without using updateUser function
+  const manualUpdateUserData = (updatedData) => {
+    try {
+      // Get current user data from localStorage
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        return false;
+      }
+      
+      // Parse the existing user data
+      const userData = JSON.parse(userStr);
+      
+      // Merge the existing user data with the updated data
+      const mergedData = {
+        ...userData,
+        ...updatedData,
+        // Ensure critical fields are preserved
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        access_token: userData.access_token,
+        created_at: userData.created_at
+      };
+      
+      // Save the updated data back to localStorage
+      localStorage.setItem('user', JSON.stringify(mergedData));
+      
+      // Reload the page to apply the changes
+      window.location.reload();
+      
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  // Handle profile update - only update the bio field
+  const handleProfileUpdate = async () => {
+    setUpdateError('');
+    setDbError(null);
+    
+    // Verify authentication
+    if (!currentUser || !currentUser.id || !currentUser.access_token) {
+      setUpdateError('User authentication error. Please log in again.');
+      setTimeout(() => {
+        if (logout) logout();
+        navigate('/login');
+      }, 2000);
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      
+      // First, upload the image if it exists
+      let profileImageUrl = currentUser.profile_image_url;
+      
+      if (profileImage) {
+        const imageFormData = new FormData();
+        imageFormData.append('file', profileImage);
+        
+        try {
+          const imageResponse = await axios.post(
+            `${API_URL}/upload/image`,
+            imageFormData,
+            {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                'Authorization': `Bearer ${currentUser.access_token}`
+              }
+            }
+          );
+          
+          if (imageResponse.data && imageResponse.data.url) {
+            profileImageUrl = imageResponse.data.url;
+          }
+        } catch (uploadErr) {
+          // Check for authentication errors
+          if (uploadErr.response?.status === 401) {
+            setUpdateError('Your session has expired. Please log in again.');
+            setTimeout(() => {
+              if (logout) logout();
+              navigate('/login');
+            }, 2000);
+            setIsSaving(false);
+            return;
+          }
+          
+          const errorMessage = uploadErr.response?.data?.detail || 'Failed to upload profile image';
+          setUpdateError(errorMessage);
+          setIsSaving(false);
+          return;
+        }
+      }
+      
+      // Then update the user profile with only bio and profile image
+      const updatedUserData = {
+        bio: formData.bio,
+        profile_image_url: profileImageUrl
+      };
+      
+      // Make the API call to update the profile
+      const response = await axios.put(
+        `${API_URL}/users/${currentUser.id}`,
+        updatedUserData,
+        { 
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${currentUser.access_token}`
+          } 
+        }
+      );
+      
+      if (response.data) {
+        // Create a complete user object with all necessary fields
+        const completeUserData = {
+          ...currentUser,
+          bio: response.data.bio,
+          profile_image_url: response.data.profile_image_url,
+          // Ensure the critical fields are preserved
+          id: currentUser.id,
+          username: currentUser.username,
+          email: currentUser.email,
+          access_token: currentUser.access_token,
+          created_at: currentUser.created_at
+        };
+        
+        // Try to update the user context using different methods
+        if (typeof authContext?.updateUser === 'function') {
+          // Method 1: Use the context's updateUser function if it exists
+          authContext.updateUser(completeUserData);
+        } else {
+          // Method 2: Fall back to manually updating localStorage
+          manualUpdateUserData(completeUserData);
+        }
+        
+        // Close the modal and reset states
+        setEditMode(false);
+        setProfileImage(null);
+        setUpdateError('');
+      }
+    } catch (err) {
+      // Handle specific database errors
+      if (err.response?.status === 500 && err.response?.data?.detail?.includes("column")) {
+        const errorMsg = err.response.data.detail;
+        setDbError(errorMsg);
+        setUpdateError(`Database error: ${errorMsg}`);
+      } 
+      // Handle authentication errors
+      else if (err.response?.status === 401) {
+        setUpdateError('Your session has expired. Please log in again.');
+        setTimeout(() => {
+          if (logout) logout();
+          navigate('/login');
+        }, 2000);
+      } else {
+        let errorMessage = 'Failed to update profile. Please try again.';
+        
+        if (err.response?.data?.detail) {
+          errorMessage = err.response.data.detail;
+        } else if (err.response?.data?.errors) {
+          errorMessage = Array.isArray(err.response.data.errors) 
+            ? err.response.data.errors.join(', ') 
+            : err.response.data.errors;
+        } else if (err.response?.data?.message) {
+          errorMessage = err.response.data.message;
+        }
+        
+        setUpdateError(errorMessage);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Render content based on active tab
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex justify-center items-center p-8">
+          <svg className="animate-spin h-8 w-8 text-twitter-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+      );
+    }
+
+    if (error) {
+      return <div className="p-4 text-red-500 text-center">{error}</div>;
+    }
+
+    switch (activeTab) {
+      case 'tweets':
+        return tweets.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">You haven't posted any tweets yet.</div>
+        ) : (
+          <div>
+            {tweets.map(tweet => (
+              <Tweet key={tweet.id} tweet={tweet} />
+            ))}
+          </div>
+        );
+      
+      case 'replies':
+        return replies.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">You haven't replied to any tweets yet.</div>
+        ) : (
+          <div>
+            {replies.map(reply => (
+              <Tweet key={reply.id} tweet={reply} />
+            ))}
+          </div>
+        );
+      
+      case 'media':
+        return mediaContent.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">You haven't shared any media yet.</div>
+        ) : (
+          <div>
+            {mediaContent.map(mediaTweet => (
+              <Tweet key={mediaTweet.id} tweet={mediaTweet} />
+            ))}
+          </div>
+        );
+      
+      case 'likes':
+        return likedTweets.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <p>You haven't liked any tweets yet.</p>
+            <p className="mt-2 text-sm">When you do, they'll show up here.</p>
+          </div>
+        ) : (
+          <div>
+            {likedTweets.map(likedTweet => (
+              <Tweet key={likedTweet.id} tweet={likedTweet} />
+            ))}
+          </div>
+        );
+      
+      default:
+        return (
+          <div className="p-8 text-center text-gray-500">Select a tab to view content.</div>
+        );
+    }
+  };
 
   if (!currentUser) {
     return (
@@ -62,85 +467,215 @@ const Profile = () => {
           </Link>
           <div>
             <h1 className="text-xl font-bold">{currentUser.username}</h1>
-            <p className="text-gray-500 text-sm">{tweets.length} Tweets</p>
+            <p className="text-gray-500 text-sm">
+              {activeTab === 'tweets' ? tweets.length : 
+               activeTab === 'replies' ? replies.length : 
+               activeTab === 'media' ? mediaContent.length : 
+               likedTweets.length} {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+            </p>
           </div>
         </div>
       </div>
-      
+
       {/* Profile header */}
       <div className="relative">
         <div className="h-48 bg-twitter-blue"></div>
         <div className="absolute top-36 left-4">
           <div className="h-24 w-24 rounded-full bg-white p-1">
-            <div className="h-full w-full rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold text-4xl">
-              {currentUser.username?.[0]?.toUpperCase()}
-            </div>
+            {currentUser.profile_image_url ? (
+              <img 
+                src={currentUser.profile_image_url} 
+                alt={currentUser.username} 
+                className="h-full w-full rounded-full object-cover"
+                onError={(e) => {
+                  // Fallback if image fails to load
+                  e.target.onerror = null; 
+                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.username)}&background=random`;
+                }}
+              />
+            ) : (
+              <div className="h-full w-full rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold text-4xl">
+                {currentUser.username?.[0]?.toUpperCase()}
+              </div>
+            )}
           </div>
         </div>
         <div className="pt-16 px-4">
           <div className="flex justify-end">
-            <button className="border border-twitter-blue text-twitter-blue px-4 py-2 rounded-full font-bold hover:bg-blue-50">
-              Edit profile
-            </button>
+            {isOwnProfile ? (
+              <button
+                className="border border-twitter-blue text-twitter-blue px-4 py-2 rounded-full font-bold hover:bg-blue-50"
+                onClick={() => setEditMode(true)}
+              >
+                Edit profile
+              </button>
+            ) : (
+              <FollowButton 
+                userId={profileUserId} 
+                initialIsFollowing={isFollowing}
+                onFollowChange={(newFollowStatus) => {
+                  setIsFollowing(newFollowStatus);
+                  // Update followers count when follow status changes
+                  setFollowersCount(prevCount => newFollowStatus ? prevCount + 1 : prevCount - 1);
+                }}
+              />
+            )}
           </div>
           <h2 className="text-xl font-bold mt-4">{currentUser.username}</h2>
           <p className="text-gray-500">@{currentUser.username}</p>
-          
-          <div className="flex flex-wrap items-center text-gray-500 mt-3 gap-4">
-            <div className="flex items-center">
-              <Calendar size={16} className="mr-1" />
-              <span>Joined {moment().format('MMMM YYYY')}</span>
-            </div>
+
+          {currentUser.bio && <p className="mt-2">{currentUser.bio}</p>}
+
+          <div className="flex items-center mt-2">
+            <Calendar size={16} className="mr-1" />
+            <span className="text-gray-500">Joined {moment(currentUser.created_at).format('MMMM YYYY')}</span>
           </div>
           
-          <div className="flex mt-4">
-            <div className="mr-6">
-              <span className="font-bold">0</span> <span className="text-gray-500">Following</span>
-            </div>
-            <div>
-              <span className="font-bold">0</span> <span className="text-gray-500">Followers</span>
-            </div>
+          {/* Followers & Following Information */}
+          <div className="flex mt-3 text-gray-500">
+            <Link to={`/users/${profileUserId}/following`} className="flex items-center mr-4 hover:underline">
+              <span className="font-bold text-black">{followingCount}</span>
+              <span className="ml-1">Following</span>
+            </Link>
+            <Link to={`/users/${profileUserId}/followers`} className="flex items-center hover:underline">
+              <span className="font-bold text-black">{followersCount}</span>
+              <span className="ml-1">Followers</span>
+            </Link>
           </div>
         </div>
       </div>
-      
+
       {/* Tabs */}
       <div className="border-b border-gray-200 mt-4">
         <nav className="flex">
-          <button className="flex-1 py-4 font-bold text-twitter-blue border-b-2 border-twitter-blue">
+          <button 
+            className={`flex-1 py-4 font-medium ${activeTab === 'tweets' ? 'text-twitter-blue font-bold border-b-2 border-twitter-blue' : 'text-gray-500 hover:bg-gray-50'}`}
+            onClick={() => setActiveTab('tweets')}
+          >
             Tweets
           </button>
-          <button className="flex-1 py-4 text-gray-500 hover:bg-gray-50">
+          <button 
+            className={`flex-1 py-4 font-medium ${activeTab === 'replies' ? 'text-twitter-blue font-bold border-b-2 border-twitter-blue' : 'text-gray-500 hover:bg-gray-50'}`}
+            onClick={() => setActiveTab('replies')}
+          >
             Replies
           </button>
-          <button className="flex-1 py-4 text-gray-500 hover:bg-gray-50">
+          <button 
+            className={`flex-1 py-4 font-medium ${activeTab === 'media' ? 'text-twitter-blue font-bold border-b-2 border-twitter-blue' : 'text-gray-500 hover:bg-gray-50'}`}
+            onClick={() => setActiveTab('media')}
+          >
             Media
           </button>
-          <button className="flex-1 py-4 text-gray-500 hover:bg-gray-50">
+          <button 
+            className={`flex-1 py-4 font-medium ${activeTab === 'likes' ? 'text-twitter-blue font-bold border-b-2 border-twitter-blue' : 'text-gray-500 hover:bg-gray-50'}`}
+            onClick={() => setActiveTab('likes')}
+          >
             Likes
           </button>
         </nav>
       </div>
-      
-      {/* Tweets */}
-      {loading ? (
-        <div className="flex justify-center items-center p-8">
-          <svg className="animate-spin h-8 w-8 text-twitter-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </div>
-      ) : error ? (
-        <div className="p-4 text-red-500 text-center">{error}</div>
-      ) : tweets.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">
-          You haven't posted any tweets yet.
-        </div>
-      ) : (
-        <div>
-          {tweets.map(tweet => (
-            <Tweet key={tweet.id} tweet={tweet} />
-          ))}
+
+      {/* Tab Content */}
+      {renderContent()}
+
+      {/* Edit Modal */}
+      {editMode && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Edit Profile</h2>
+
+            {dbError && (
+              <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 rounded-md">
+                <p className="font-bold">Database Issue:</p>
+                <p className="text-sm">{dbError}</p>
+                <p className="text-sm mt-2">Only updating bio and profile picture.</p>
+              </div>
+            )}
+
+            {updateError && (
+              <div className="mb-4 p-2 bg-red-100 text-red-700 rounded-md">
+                {updateError}
+              </div>
+            )}
+            
+            {/* Profile Image Upload */}
+            <div className="mb-4 flex flex-col items-center">
+              <div className="relative mb-3">
+                {previewImage ? (
+                  <img 
+                    src={previewImage} 
+                    alt="Profile Preview" 
+                    className="h-24 w-24 rounded-full object-cover border-2 border-twitter-blue"
+                  />
+                ) : (
+                  <div className="h-24 w-24 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold text-4xl border-2 border-twitter-blue">
+                    {currentUser.username?.[0]?.toUpperCase()}
+                  </div>
+                )}
+                <button 
+                  onClick={triggerFileInput}
+                  className="absolute bottom-0 right-0 bg-twitter-blue text-white p-2 rounded-full hover:bg-blue-600"
+                  type="button"
+                >
+                  <Camera size={18} />
+                </button>
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImageChange}
+                accept="image/*"
+                className="hidden"
+              />
+              <button
+                onClick={triggerFileInput}
+                className="text-twitter-blue text-sm hover:underline"
+                type="button"
+              >
+                Change profile photo
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <label className="block text-sm text-gray-700 mb-1">Bio</label>
+              <textarea
+                value={formData.bio}
+                onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-twitter-blue"
+                rows={3}
+                maxLength={160}
+                placeholder="Add a bio about yourself"
+              />
+              <div className="text-xs text-gray-500 text-right">
+                {formData.bio.length}/160
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                className="px-4 py-2 border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
+                onClick={() => {
+                  setEditMode(false);
+                  setPreviewImage(currentUser.profile_image_url || null);
+                  setProfileImage(null);
+                  setUpdateError('');
+                  setDbError(null);
+                }}
+                disabled={isSaving}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="bg-twitter-blue text-white px-4 py-2 rounded-md disabled:opacity-50 hover:bg-blue-600"
+                onClick={handleProfileUpdate}
+                disabled={isSaving}
+                type="button"
+              >
+                {isSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

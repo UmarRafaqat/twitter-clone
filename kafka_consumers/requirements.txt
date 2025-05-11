@@ -1,0 +1,6 @@
+kafka-python==2.0.2
+pymongo==4.3.3
+psycopg2-binary==2.9.5
+cassandra-driver==3.25.0
+textblob==0.17.1
+nltk==3.8.1
