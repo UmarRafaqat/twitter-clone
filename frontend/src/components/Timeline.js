@@ -13,9 +13,6 @@ const Timeline = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { currentUser, isAuthenticated } = React.useContext(AuthContext);
 
-  // Debug info
-  console.log("Timeline rendered, auth status:", isAuthenticated);
-
   // Enhanced fetchTweets with counts preservation
   const fetchTweets = useCallback(async () => {
     // Skip fetch if not authenticated
@@ -98,7 +95,7 @@ const Timeline = () => {
     }
   }, [isAuthenticated, fetchTweets]);
   
-  // Setup refresh interval (less frequent to avoid too many API calls)
+  // Setup refresh interval
   useEffect(() => {
     if (!isAuthenticated) return;
     
@@ -115,6 +112,19 @@ const Timeline = () => {
     
     return () => clearInterval(intervalId);
   }, [fetchTweets, isAuthenticated]);
+
+  // Listen for user profile updates
+  useEffect(() => {
+    const handleUserUpdate = () => {
+      // Refresh tweets when a user profile is updated
+      if (isAuthenticated) {
+        fetchTweets();
+      }
+    };
+    
+    window.addEventListener('user-updated', handleUserUpdate);
+    return () => window.removeEventListener('user-updated', handleUserUpdate);
+  }, [isAuthenticated, fetchTweets]);
 
   const handleRefresh = async () => {
     if (!isAuthenticated || refreshing) return;

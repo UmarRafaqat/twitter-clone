@@ -263,6 +263,46 @@ def get_cassandra_session():
         yield session
     finally:
         cluster.shutdown()
+#
+# Add this after your Kafka initialization
+def ensure_kafka_connection():
+    """Attempt to reconnect to Kafka if connection was lost"""
+    global kafka_producer
+    
+    if kafka_producer is None:
+        try:
+            logger.info("Attempting to connect to Kafka...")
+            kafka_producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+            )
+            logger.info("Successfully connected to Kafka")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to Kafka: {e}")
+            return False
+    return True
+
+# Use this before sending any Kafka messages
+def send_kafka_event(topic, event):
+    """Send event to Kafka with retry logic"""
+    if ensure_kafka_connection() and kafka_producer:
+        try:
+            kafka_producer.send(topic, event)
+            kafka_producer.flush(timeout=10)  # Wait up to 10 seconds
+            return True
+        except Exception as e:
+            logger.error(f"Error sending Kafka event to {topic}: {e}")
+    return False
+# Add this to startup events
+@app.on_event("startup")
+async def app_startup():
+    """Run on application startup"""
+    # Existing startup code...
+    
+    # Try to connect to Kafka
+    kafka_connected = ensure_kafka_connection()
+    print(f"Kafka connection status: {'Connected' if kafka_connected else 'Failed'}") 
 
 # Authentication
 # Custom HTTP Bearer for optional authentication
@@ -1226,6 +1266,49 @@ def create_tweet(
         "media_urls": checked_urls  # And here
     }
 
+@app.get("/system/health")
+def system_health():
+    """Check health of all system components"""
+    health = {
+        "api": "healthy",
+        "database": {
+            "postgres": check_postgres_health(),
+            "mongodb": check_mongodb_health(),
+            "cassandra": check_cassandra_health()
+        },
+        "messaging": {
+            "kafka": "healthy" if kafka_producer else "not connected"
+        },
+        "storage": {
+            "minio": "healthy" if minio_client else "not connected"
+        },
+        "analytics": {
+            "spark": check_spark_health(),
+            "scheduled_jobs": get_scheduled_jobs_status()
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    return health
+
+def check_postgres_health():
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
+        conn.close()
+        return "healthy"
+    except Exception as e:
+        return f"unhealthy: {str(e)}"
+
+def check_mongodb_health():
+    try:
+        client = MongoClient(MONGODB_URL, serverSelectionTimeoutMS=2000)
+        client.admin.command('ping')
+        return "healthy"
+    except Exception as e:
+        return f"unhealthy: {str(e)}"
+    
 @app.get("/tweets/{tweet_id}/like-status")
 def get_tweet_like_status(
     tweet_id: str,
@@ -1987,29 +2070,46 @@ def get_timeline(current_user = Depends(get_current_user), conn = Depends(get_pg
         })
     
     return timeline
-
 @app.get("/trending")
 def get_trending_hashtags(mongo_client = Depends(get_mongo_client)):
-    """Get trending hashtags in the last hour"""
-    # This is a simplified implementation
-    # In a real app, this would use Spark MLlib for more sophisticated trending detection
+    """Get trending hashtags"""
+    try:
+        # First try to get data from Spark analytics
+        analytics_db = mongo_client.mini_twitter_analytics
+        trending = list(analytics_db.trending_hashtags_daily.find(
+            {},
+            sort=[("count", -1)],
+            limit=10
+        ))
+        
+        # Transform document IDs to strings
+        for trend in trending:
+            if "_id" in trend:
+                trend["_id"] = str(trend["_id"])
+        
+        if trending:
+            return trending
+        
+        # Fallback: Simple aggregation if Spark analytics data is not available
+        tweets_collection = mongo_client.mini_twitter.tweets
+        one_day_ago = datetime.utcnow() - timedelta(days=1)
+        
+        pipeline = [
+            {"$match": {"created_at": {"$gte": one_day_ago}}},
+            {"$unwind": "$hashtags"},
+            {"$group": {"_id": "$hashtags", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10}
+        ]
+        
+        results = list(tweets_collection.aggregate(pipeline))
+        return [{"hashtag": r["_id"], "count": r["count"]} for r in results]
+    except Exception as e:
+        print(f"Error in trending hashtags: {e}")
+        # Return empty list in case of any error
+        return []
     
-    # Get tweets from the last hour
-    tweets_collection = mongo_client.mini_twitter.tweets
-    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
-    
-    pipeline = [
-        {"$match": {"created_at": {"$gte": one_hour_ago}}},
-        {"$unwind": "$hashtags"},
-        {"$group": {"_id": "$hashtags", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 10}
-    ]
-    
-    trending = list(tweets_collection.aggregate(pipeline))
-    return [{"hashtag": t["_id"], "count": t["count"]} for t in trending]
-
-# Database Explorer Endpoints
+    # Database Explorer Endpoints
 db_router = APIRouter(prefix="/db", tags=["database"])
 
 @db_router.get("/cassandra/{keyspace}/{table}")

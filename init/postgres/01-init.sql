@@ -6,7 +6,8 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL,
     bio TEXT,
-    profile_image_url VARCHAR(255)
+    profile_image_url VARCHAR(255),
+    banner_image_url VARCHAR(255)
 );
 
 -- Follows table for storing follow relationships

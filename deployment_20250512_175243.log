@@ -1,0 +1,307 @@
+[2025-05-12 17:52:43] Starting Mini-Twitter deployment...
+[2025-05-12 17:52:43] Checking for required tools...
+[2025-05-12 17:52:43] Docker and Docker Compose are available.
+[2025-05-12 17:52:43] Building and starting containers...
+Compose can now delegate builds to bake for better performance.
+ To do so, set COMPOSE_BAKE=true.
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [spark-scheduler internal] load build definition from Dockerfile
+#1 transferring dockerfile: 405B 0.0s done
+#1 DONE 0.0s
+
+#2 [api internal] load build definition from Dockerfile
+#2 transferring dockerfile: 251B done
+#2 DONE 0.1s
+
+#3 [spark-scheduler internal] load metadata for docker.io/bitnami/spark:3.3
+#3 DONE 0.0s
+
+#4 [kafka-consumers internal] load build definition from Dockerfile
+#4 transferring dockerfile: 195B done
+#4 DONE 0.0s
+
+#5 [spark-scheduler internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [kafka-consumers internal] load metadata for docker.io/library/python:3.9-slim
+#6 ...
+
+#7 [spark-scheduler internal] load build context
+#7 transferring context: 6.20kB 0.0s done
+#7 DONE 0.0s
+
+#8 [spark-scheduler 1/6] FROM docker.io/bitnami/spark:3.3
+#8 CACHED
+
+#9 [spark-scheduler 2/6] COPY requirements.txt /tmp/
+#9 DONE 0.1s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 ...
+
+#6 [kafka-consumers internal] load metadata for docker.io/library/python:3.9-slim
+#6 DONE 2.3s
+
+#11 [api internal] load .dockerignore
+#11 transferring context: 2B done
+#11 DONE 0.0s
+
+#12 [kafka-consumers internal] load .dockerignore
+#12 transferring context: 2B done
+#12 DONE 0.0s
+
+#13 [kafka-consumers 1/5] FROM docker.io/library/python:3.9-slim@sha256:bef8d69306a7905f55cd523f5604de1dde45bbf745ba896dbb89f6d15c727170
+#13 DONE 0.0s
+
+#14 [api internal] load build context
+#14 transferring context: 77.20kB 0.0s done
+#14 DONE 0.1s
+
+#15 [kafka-consumers internal] load build context
+#15 transferring context: 6.29kB 0.0s done
+#15 DONE 0.1s
+
+#16 [api 3/5] COPY requirements.txt .
+#16 CACHED
+
+#17 [api 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#17 CACHED
+
+#18 [api 2/5] WORKDIR /app
+#18 CACHED
+
+#19 [kafka-consumers 3/5] COPY requirements.txt .
+#19 ...
+
+#20 [api 5/5] COPY . .
+#20 DONE 0.2s
+
+#19 [kafka-consumers 3/5] COPY requirements.txt .
+#19 DONE 0.2s
+
+#21 [api] exporting to image
+#21 exporting layers 0.1s done
+#21 writing image sha256:abb6068c8872e3e4c23d6970cca7682b377eedd0cb8f66ff8ca500a624a1e52d done
+#21 naming to docker.io/library/mini-twitter-v-full-ui-correct-api 0.0s done
+#21 DONE 0.2s
+
+#22 [api] resolving provenance for metadata file
+#22 DONE 0.0s
+
+#23 [kafka-consumers 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#23 ...
+
+#24 [frontend internal] load build definition from Dockerfile
+#24 transferring dockerfile: 157B done
+#24 DONE 0.0s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 3.230 Collecting schedule==1.1.0 (from -r /tmp/requirements.txt (line 1))
+#10 3.835   Downloading schedule-1.1.0-py2.py3-none-any.whl.metadata (3.0 kB)
+#10 ...
+
+#25 [frontend internal] load metadata for docker.io/library/node:16
+#25 DONE 1.4s
+
+#26 [frontend internal] load .dockerignore
+#26 transferring context: 2B done
+#26 DONE 0.0s
+
+#27 [frontend 1/5] FROM docker.io/library/node:16@sha256:f77a1aef2da8d83e45ec990f45df50f1a286c5fe8bbfb8c6e4246c6389705c0b
+#27 DONE 0.0s
+
+#28 [frontend internal] load build context
+#28 transferring context: 4.21kB 0.0s done
+#28 DONE 0.0s
+
+#29 [frontend 2/5] WORKDIR /app
+#29 CACHED
+
+#30 [frontend 3/5] COPY package.json ./
+#30 CACHED
+
+#31 [frontend 4/5] RUN npm install
+#31 CACHED
+
+#32 [frontend 5/5] COPY . .
+#32 DONE 0.2s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 ...
+
+#33 [frontend] exporting to image
+#33 exporting layers 0.1s done
+#33 writing image sha256:5f488affb34846e005fe4255211d4e747f23260c67284cbfdf83a0f49e29e163 done
+#33 naming to docker.io/library/mini-twitter-v-full-ui-correct-frontend 0.0s done
+#33 DONE 0.2s
+
+#34 [frontend] resolving provenance for metadata file
+#34 DONE 0.0s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 6.503 Collecting pymongo==4.3.3 (from -r /tmp/requirements.txt (line 2))
+#10 6.735   Downloading pymongo-4.3.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (8.6 kB)
+#10 7.155 Collecting psycopg2-binary==2.9.5 (from -r /tmp/requirements.txt (line 3))
+#10 7.245   Downloading psycopg2_binary-2.9.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.4 kB)
+#10 7.547 Collecting nltk==3.8.1 (from -r /tmp/requirements.txt (line 4))
+#10 7.647   Downloading nltk-3.8.1-py3-none-any.whl.metadata (2.8 kB)
+#10 7.893 Collecting textblob==0.17.1 (from -r /tmp/requirements.txt (line 5))
+#10 7.945   Downloading textblob-0.17.1-py2.py3-none-any.whl.metadata (4.2 kB)
+#10 8.325 Collecting dnspython<3.0.0,>=1.16.0 (from pymongo==4.3.3->-r /tmp/requirements.txt (line 2))
+#10 8.372   Downloading dnspython-2.7.0-py3-none-any.whl.metadata (5.8 kB)
+#10 8.700 Collecting click (from nltk==3.8.1->-r /tmp/requirements.txt (line 4))
+#10 8.761   Downloading click-8.2.0-py3-none-any.whl.metadata (2.5 kB)
+#10 9.072 Collecting joblib (from nltk==3.8.1->-r /tmp/requirements.txt (line 4))
+#10 9.114   Downloading joblib-1.5.0-py3-none-any.whl.metadata (5.6 kB)
+#10 11.26 Collecting regex>=2021.8.3 (from nltk==3.8.1->-r /tmp/requirements.txt (line 4))
+#10 11.30   Downloading regex-2024.11.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (40 kB)
+#10 11.34      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 40.5/40.5 kB 1.4 MB/s eta 0:00:00
+#10 11.66 Collecting tqdm (from nltk==3.8.1->-r /tmp/requirements.txt (line 4))
+#10 11.70   Downloading tqdm-4.67.1-py3-none-any.whl.metadata (57 kB)
+#10 11.71      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 57.7/57.7 kB 5.1 MB/s eta 0:00:00
+#10 11.96 Downloading schedule-1.1.0-py2.py3-none-any.whl (10 kB)
+#10 12.20 Downloading pymongo-4.3.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (492 kB)
+#10 12.32    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 492.9/492.9 kB 4.1 MB/s eta 0:00:00
+#10 12.37 Downloading psycopg2_binary-2.9.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+#10 13.01    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 4.7 MB/s eta 0:00:00
+#10 13.07 Downloading nltk-3.8.1-py3-none-any.whl (1.5 MB)
+#10 13.47    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 3.9 MB/s eta 0:00:00
+#10 13.51 Downloading textblob-0.17.1-py2.py3-none-any.whl (636 kB)
+#10 13.66    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 636.8/636.8 kB 4.6 MB/s eta 0:00:00
+#10 13.71 Downloading dnspython-2.7.0-py3-none-any.whl (313 kB)
+#10 13.80    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 313.6/313.6 kB 4.1 MB/s eta 0:00:00
+#10 13.85 Downloading regex-2024.11.6-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (781 kB)
+#10 14.07    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 781.7/781.7 kB 3.8 MB/s eta 0:00:00
+#10 14.11 Downloading click-8.2.0-py3-none-any.whl (102 kB)
+#10 14.13    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 102.2/102.2 kB 17.7 MB/s eta 0:00:00
+#10 14.18 Downloading joblib-1.5.0-py3-none-any.whl (307 kB)
+#10 14.23    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 307.7/307.7 kB 6.9 MB/s eta 0:00:00
+#10 14.27 Downloading tqdm-4.67.1-py3-none-any.whl (78 kB)
+#10 14.28    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 78.5/78.5 kB 7.1 MB/s eta 0:00:00
+#10 14.72 Installing collected packages: tqdm, schedule, regex, psycopg2-binary, joblib, dnspython, click, pymongo, nltk, textblob
+#10 ...
+
+#23 [kafka-consumers 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#23 6.048 Collecting kafka-python==2.0.2
+#23 6.504   Downloading kafka_python-2.0.2-py2.py3-none-any.whl (246 kB)
+#23 6.719      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 246.5/246.5 kB 1.1 MB/s eta 0:00:00
+#23 9.342 Collecting pymongo==4.3.3
+#23 9.383   Downloading pymongo-4.3.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (492 kB)
+#23 9.607      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 492.1/492.1 kB 2.2 MB/s eta 0:00:00
+#23 10.21 Collecting psycopg2-binary==2.9.5
+#23 10.26   Downloading psycopg2_binary-2.9.5-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+#23 11.65      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 2.2 MB/s eta 0:00:00
+#23 11.91 Collecting cassandra-driver==3.25.0
+#23 12.16   Downloading cassandra_driver-3.25.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl (3.6 MB)
+#23 13.16      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.6/3.6 MB 3.7 MB/s eta 0:00:00
+#23 13.38 Collecting dnspython<3.0.0,>=1.16.0
+#23 13.41   Downloading dnspython-2.7.0-py3-none-any.whl (313 kB)
+#23 13.48      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 313.6/313.6 kB 5.9 MB/s eta 0:00:00
+#23 13.64 Collecting six>=1.9
+#23 13.68   Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+#23 13.83 Collecting geomet<0.3,>=0.1
+#23 13.87   Downloading geomet-0.2.1.post1-py3-none-any.whl (18 kB)
+#23 14.14 Collecting click
+#23 14.18   Downloading click-8.1.8-py3-none-any.whl (98 kB)
+#23 14.21      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 98.2/98.2 kB 5.0 MB/s eta 0:00:00
+#23 14.37 Installing collected packages: kafka-python, six, psycopg2-binary, dnspython, click, pymongo, geomet, cassandra-driver
+#23 16.22 Successfully installed cassandra-driver-3.25.0 click-8.1.8 dnspython-2.7.0 geomet-0.2.1.post1 kafka-python-2.0.2 psycopg2-binary-2.9.5 pymongo-4.3.3 six-1.17.0
+#23 16.22 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+#23 ...
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 18.95 Successfully installed click-8.2.0 dnspython-2.7.0 joblib-1.5.0 nltk-3.8.1 psycopg2-binary-2.9.5 pymongo-4.3.3 regex-2024.11.6 schedule-1.1.0 textblob-0.17.1 tqdm-4.67.1
+#10 18.96 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+#10 ...
+
+#23 [kafka-consumers 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#23 16.98 
+#23 16.98 [notice] A new release of pip is available: 23.0.1 -> 25.1.1
+#23 16.98 [notice] To update, run: pip install --upgrade pip
+#23 DONE 17.4s
+
+#35 [kafka-consumers 5/5] COPY . .
+#35 DONE 0.1s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 DONE 20.3s
+
+#10 [spark-scheduler 3/6] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 DONE 20.3s
+
+#36 [spark-scheduler 4/6] WORKDIR /opt/spark-jobs
+#36 DONE 0.1s
+
+#37 [spark-scheduler 5/6] COPY *.py /opt/spark-jobs/
+#37 DONE 0.1s
+
+#38 [kafka-consumers] exporting to image
+#38 exporting layers
+#38 exporting layers 0.5s done
+#38 writing image sha256:558fe245ba88dbccd277790f3f4bd055f96b20920360cb4f5e9f41c6d8c704f1 done
+#38 naming to docker.io/library/mini-twitter-v-full-ui-correct-kafka-consumers 0.0s done
+#38 DONE -3.0s
+
+#39 [spark-scheduler 6/6] RUN chmod -R 755 /opt/spark-jobs
+#39 ...
+
+#40 [kafka-consumers] resolving provenance for metadata file
+#40 DONE 0.0s
+
+#39 [spark-scheduler 6/6] RUN chmod -R 755 /opt/spark-jobs
+#39 DONE 0.6s
+
+#41 [spark-scheduler] exporting to image
+#41 exporting layers 0.6s done
+#41 writing image sha256:9c5d41b067d238745b4567ba10c392b15288ee9f774fae936204629676d1cee1 done
+#41 naming to docker.io/library/mini-twitter-v-full-ui-correct-spark-scheduler 0.0s done
+#41 DONE 0.7s
+
+#42 [spark-scheduler] resolving provenance for metadata file
+#42 DONE 0.0s
+ api  Built
+ frontend  Built
+ kafka-consumers  Built
+ spark-scheduler  Built
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Created
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Created
+ Container mini-twitter-v-full-ui-correct-minio-1  Created
+ Container mini-twitter-v-full-ui-correct-postgres-1  Created
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Created
+ Container mini-twitter-v-full-ui-correct-kafka-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Recreate
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Recreate
+ Container mini-twitter-v-full-ui-correct-frontend-1  Stopping
+ Container mini-twitter-v-full-ui-correct-frontend-1  Stopped
+ Container mini-twitter-v-full-ui-correct-api-1  Recreate
+ Container mini-twitter-v-full-ui-correct-api-1  Recreated
+ Container mini-twitter-v-full-ui-correct-frontend-1  Recreate
+ Container mini-twitter-v-full-ui-correct-frontend-1  Recreated
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Recreated
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Recreated
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Starting
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Starting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Starting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Starting
+ Container mini-twitter-v-full-ui-correct-minio-1  Starting
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Starting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Started
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Started
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Started
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Started
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Starting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Started
+ Container mini-twitter-v-full-ui-correct-minio-1  Started
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Started
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Error
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Healthy
+ Container mini-twitter-v-full-ui-correct-kafka-1  Starting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Started
+dependency failed to start: container mini-twitter-v-full-ui-correct-mongodb-1 exited (14)
+[2025-05-12 17:53:25] ERROR: Docker Compose build failed.

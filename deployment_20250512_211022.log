@@ -1,0 +1,344 @@
+[2025-05-12 21:10:22] Starting Mini-Twitter deployment...
+[2025-05-12 21:10:22] Checking for required tools...
+[2025-05-12 21:10:22] Docker and Docker Compose are available.
+[2025-05-12 21:10:22] Building and starting containers...
+Compose can now delegate builds to bake for better performance.
+ To do so, set COMPOSE_BAKE=true.
+2025/05/12 21:10:22 http2: server: error reading preface from client //./pipe/dockerDesktopLinuxEngine: file has already been closed
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [spark-scheduler internal] load build definition from Dockerfile
+#1 transferring dockerfile: 584B done
+#1 DONE 0.0s
+
+#2 [api internal] load build definition from Dockerfile
+#2 transferring dockerfile: 251B 0.0s done
+#2 DONE 0.1s
+
+#3 [spark-scheduler internal] load metadata for docker.io/bitnami/spark:3.3
+#3 DONE 0.0s
+
+#4 [kafka-consumers internal] load build definition from Dockerfile
+#4 transferring dockerfile: 320B done
+#4 DONE 0.1s
+
+#5 [spark-scheduler internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [kafka-consumers internal] load metadata for docker.io/library/python:3.9-slim
+#6 ...
+
+#7 [spark-scheduler 1/7] FROM docker.io/bitnami/spark:3.3
+#7 DONE 0.0s
+
+#8 [spark-scheduler internal] load build context
+#8 transferring context: 2.00kB done
+#8 DONE 0.0s
+
+#9 [spark-scheduler 2/7] RUN apt-get update && apt-get install -y     build-essential     python3-dev     && apt-get clean     && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [spark-scheduler 3/7] COPY requirements.txt /tmp/
+#10 CACHED
+
+#11 [spark-scheduler 4/7] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#11 CACHED
+
+#12 [spark-scheduler 5/7] WORKDIR /opt/spark-jobs
+#12 CACHED
+
+#13 [spark-scheduler 6/7] COPY *.py /opt/spark-jobs/
+#13 DONE 0.1s
+
+#14 [spark-scheduler 7/7] RUN chmod -R 755 /opt/spark-jobs
+#14 DONE 0.7s
+
+#6 [kafka-consumers internal] load metadata for docker.io/library/python:3.9-slim
+#6 ...
+
+#15 [spark-scheduler] exporting to image
+#15 exporting layers 0.1s done
+#15 writing image sha256:67780f5565591dff52a9302a09413a69a57ce8d94eade3f888d239dea1e369dd done
+#15 naming to docker.io/library/mini-twitter-v-full-ui-correct-spark-scheduler done
+#15 DONE 0.1s
+
+#16 [spark-scheduler] resolving provenance for metadata file
+#16 DONE 0.0s
+
+#6 [kafka-consumers internal] load metadata for docker.io/library/python:3.9-slim
+#6 DONE 4.3s
+
+#17 [api internal] load .dockerignore
+#17 transferring context: 2B done
+#17 DONE 0.0s
+
+#18 [kafka-consumers 1/5] FROM docker.io/library/python:3.9-slim@sha256:bef8d69306a7905f55cd523f5604de1dde45bbf745ba896dbb89f6d15c727170
+#18 DONE 0.0s
+
+#19 [kafka-consumers internal] load .dockerignore
+#19 transferring context: 2B done
+#19 DONE 0.0s
+
+#20 [api internal] load build context
+#20 transferring context: 80.89kB 0.0s done
+#20 DONE 0.0s
+
+#21 [api 2/5] WORKDIR /app
+#21 CACHED
+
+#22 [api 3/5] COPY requirements.txt .
+#22 CACHED
+
+#23 [api 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#23 CACHED
+
+#24 [kafka-consumers internal] load build context
+#24 transferring context: 819B done
+#24 DONE 0.0s
+
+#25 [kafka-consumers 3/7] COPY requirements.txt .
+#25 CACHED
+
+#26 [kafka-consumers 4/7] RUN pip install --no-cache-dir -r requirements.txt
+#26 CACHED
+
+#27 [kafka-consumers 6/7] RUN python -m textblob.download_corpora
+#27 CACHED
+
+#28 [kafka-consumers 5/7] RUN python -m nltk.downloader punkt
+#28 CACHED
+
+#21 [kafka-consumers 2/5] WORKDIR /app
+#21 CACHED
+
+#29 [kafka-consumers 7/7] COPY . .
+#29 CACHED
+
+#30 [kafka-consumers] exporting to image
+#30 exporting layers done
+#30 writing image sha256:c899469b1ce2c5c6e576fc2fa466906fee53acb9223172a73eee1d9263e186ce done
+#30 naming to docker.io/library/mini-twitter-v-full-ui-correct-kafka-consumers done
+#30 DONE 0.0s
+
+#31 [api 5/5] COPY . .
+#31 DONE 0.1s
+
+#32 [api] exporting to image
+#32 ...
+
+#33 [kafka-consumers] resolving provenance for metadata file
+#33 DONE 0.0s
+
+#32 [api] exporting to image
+#32 exporting layers 0.1s done
+#32 writing image sha256:bcda7cba85b975d906b2c24919965fe308d315e1dd8cf737bfd9b197c4c76930 done
+#32 naming to docker.io/library/mini-twitter-v-full-ui-correct-api
+#32 naming to docker.io/library/mini-twitter-v-full-ui-correct-api done
+#32 DONE 0.1s
+
+#34 [api] resolving provenance for metadata file
+#34 DONE 0.0s
+
+#35 [frontend internal] load build definition from Dockerfile
+#35 transferring dockerfile: 157B done
+#35 DONE 0.0s
+
+#36 [frontend internal] load metadata for docker.io/library/node:16
+#36 DONE 1.3s
+
+#37 [frontend internal] load .dockerignore
+#37 transferring context: 2B done
+#37 DONE 0.0s
+
+#38 [frontend 1/5] FROM docker.io/library/node:16@sha256:f77a1aef2da8d83e45ec990f45df50f1a286c5fe8bbfb8c6e4246c6389705c0b
+#38 DONE 0.0s
+
+#39 [frontend internal] load build context
+#39 transferring context: 20.85kB 0.0s done
+#39 DONE 0.0s
+
+#40 [frontend 3/5] COPY package.json ./
+#40 CACHED
+
+#41 [frontend 2/5] WORKDIR /app
+#41 CACHED
+
+#42 [frontend 4/5] RUN npm install
+#42 CACHED
+
+#43 [frontend 5/5] COPY . .
+#43 DONE 0.1s
+
+#44 [frontend] exporting to image
+#44 exporting layers 0.1s done
+#44 writing image sha256:06b8656e349609985a5e0ad00229086a7bbed37d4bd7a7862574e05283271480 done
+#44 naming to docker.io/library/mini-twitter-v-full-ui-correct-frontend done
+#44 DONE 0.1s
+
+#45 [frontend] resolving provenance for metadata file
+#45 DONE 0.0s
+ api  Built
+ frontend  Built
+ kafka-consumers  Built
+ spark-scheduler  Built
+ Network mini-twitter-v-full-ui-correct_default  Creating
+ Network mini-twitter-v-full-ui-correct_default  Created
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Creating
+ Container mini-twitter-v-full-ui-correct-postgres-1  Creating
+ Container mini-twitter-v-full-ui-correct-minio-1  Creating
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Creating
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Creating
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Creating
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Creating
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Created
+ Container mini-twitter-v-full-ui-correct-postgres-1  Created
+ Container mini-twitter-v-full-ui-correct-minio-1  Created
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Created
+ Container mini-twitter-v-full-ui-correct-kafka-1  Creating
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Creating
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Created
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Created
+ Container mini-twitter-v-full-ui-correct-kafka-1  Created
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Creating
+ Container mini-twitter-v-full-ui-correct-api-1  Creating
+ Container mini-twitter-v-full-ui-correct-api-1  Created
+ Container mini-twitter-v-full-ui-correct-frontend-1  Creating
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Created
+ Container mini-twitter-v-full-ui-correct-frontend-1  Created
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Starting
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Starting
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Starting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Starting
+ Container mini-twitter-v-full-ui-correct-minio-1  Starting
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Starting
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Started
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Started
+ Container mini-twitter-v-full-ui-correct-minio-1  Started
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Started
+ Container mini-twitter-v-full-ui-correct-postgres-1  Started
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Started
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Starting
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Started
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Healthy
+ Container mini-twitter-v-full-ui-correct-kafka-1  Starting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Starting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Started
+ Container mini-twitter-v-full-ui-correct-kafka-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Waiting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-postgres-1  Healthy
+ Container mini-twitter-v-full-ui-correct-postgres-1  Healthy
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Started
+ Container mini-twitter-v-full-ui-correct-kafka-1  Healthy
+ Container mini-twitter-v-full-ui-correct-api-1  Starting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Healthy
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Starting
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Started
+ Container mini-twitter-v-full-ui-correct-api-1  Started
+ Container mini-twitter-v-full-ui-correct-frontend-1  Starting
+ Container mini-twitter-v-full-ui-correct-frontend-1  Started
+[2025-05-12 21:11:22] Containers started. Listing running containers:
+CONTAINER ID   IMAGE                                             COMMAND                  CREATED          STATUS                           PORTS                                                       NAMES
+266d17e85223   mini-twitter-v-full-ui-correct-frontend           "docker-entrypoint.s…"   50 seconds ago   Up 1 second                      0.0.0.0:3000->3000/tcp                                      mini-twitter-v-full-ui-correct-frontend-1
+d97e15a4619f   mini-twitter-v-full-ui-correct-api                "uvicorn main:app --…"   50 seconds ago   Up 1 second (health: starting)   0.0.0.0:8000->8000/tcp                                      mini-twitter-v-full-ui-correct-api-1
+1510e5a68e06   mini-twitter-v-full-ui-correct-kafka-consumers    "python main.py"         50 seconds ago   Up 1 second                                                                                  mini-twitter-v-full-ui-correct-kafka-consumers-1
+5e2bb930e569   mini-twitter-v-full-ui-correct-spark-scheduler    "/opt/bitnami/script…"   50 seconds ago   Up 16 seconds                                                                                mini-twitter-v-full-ui-correct-spark-scheduler-1
+50842245e402   bitnami/kafka:3.4                                 "/opt/bitnami/script…"   50 seconds ago   Up 17 seconds (healthy)          0.0.0.0:9092->9092/tcp                                      mini-twitter-v-full-ui-correct-kafka-1
+1263f239484d   bitnami/spark:3.3                                 "/opt/bitnami/script…"   51 seconds ago   Up 24 seconds                                                                                mini-twitter-v-full-ui-correct-spark-worker-1
+be1b78240c09   bitnami/zookeeper:3.8                             "/opt/bitnami/script…"   51 seconds ago   Up 24 seconds (healthy)          2888/tcp, 3888/tcp, 0.0.0.0:2181->2181/tcp, 8080/tcp        mini-twitter-v-full-ui-correct-zookeeper-1
+c10b7b90af2c   mongo:5                                           "docker-entrypoint.s…"   51 seconds ago   Up 24 seconds (healthy)          0.0.0.0:27017->27017/tcp                                    mini-twitter-v-full-ui-correct-mongodb-1
+1efced88a458   cassandra:4                                       "docker-entrypoint.s…"   51 seconds ago   Up 24 seconds (healthy)          7000-7001/tcp, 7199/tcp, 9160/tcp, 0.0.0.0:9042->9042/tcp   mini-twitter-v-full-ui-correct-cassandra-1
+27d0304c8a6c   minio/minio:RELEASE.2023-07-07T07-13-57Z          "/usr/bin/docker-ent…"   51 seconds ago   Up 24 seconds                    0.0.0.0:9000-9001->9000-9001/tcp                            mini-twitter-v-full-ui-correct-minio-1
+0d01c87aaa38   postgres:14                                       "docker-entrypoint.s…"   51 seconds ago   Up 24 seconds (healthy)          0.0.0.0:5433->5432/tcp                                      mini-twitter-v-full-ui-correct-postgres-1
+48fd301d0648   bitnami/spark:3.3                                 "/opt/bitnami/script…"   51 seconds ago   Up 24 seconds                    0.0.0.0:7077->7077/tcp, 0.0.0.0:8080->8080/tcp              mini-twitter-v-full-ui-correct-spark-master-1
+81693c9d91f3   mini-twitter-v-full-ui_kafka-sp-hashtag-trends    "/opt/bitnami/script…"   27 hours ago     Restarting (1) 15 seconds ago                                                                mini-twitter-v-full-ui_kafka-sp-hashtag-trends-1
+6bc2071de4aa   mini-twitter-v-full-ui_kafka-sp-user-engagement   "/opt/bitnami/script…"   27 hours ago     Restarting (1) 22 seconds ago                                                                mini-twitter-v-full-ui_kafka-sp-user-engagement-1
+[2025-05-12 21:11:23] Waiting for services to be ready...
+[2025-05-12 21:11:23] Waiting... (1/30)
+[2025-05-12 21:11:24] Waiting... (2/30)
+[2025-05-12 21:11:26] Waiting... (3/30)
+[2025-05-12 21:11:27] Waiting... (4/30)
+[2025-05-12 21:11:28] Waiting... (5/30)
+[2025-05-12 21:11:29] Waiting... (6/30)
+[2025-05-12 21:11:30] Waiting... (7/30)
+[2025-05-12 21:11:31] Waiting... (8/30)
+[2025-05-12 21:11:33] Waiting... (9/30)
+[2025-05-12 21:11:34] Waiting... (10/30)
+[2025-05-12 21:11:35] Waiting... (11/30)
+[2025-05-12 21:11:36] Waiting... (12/30)
+[2025-05-12 21:11:37] Waiting... (13/30)
+[2025-05-12 21:11:38] Waiting... (14/30)
+[2025-05-12 21:11:39] Waiting... (15/30)
+[2025-05-12 21:11:41] Waiting... (16/30)
+[2025-05-12 21:11:42] Waiting... (17/30)
+[2025-05-12 21:11:43] Waiting... (18/30)
+[2025-05-12 21:11:44] Waiting... (19/30)
+[2025-05-12 21:11:45] Waiting... (20/30)
+[2025-05-12 21:11:46] Waiting... (21/30)
+[2025-05-12 21:11:48] Waiting... (22/30)
+[2025-05-12 21:11:49] Waiting... (23/30)
+[2025-05-12 21:11:50] Waiting... (24/30)
+[2025-05-12 21:11:51] Waiting... (25/30)
+[2025-05-12 21:11:52] Waiting... (26/30)
+[2025-05-12 21:11:53] Waiting... (27/30)
+[2025-05-12 21:11:54] Waiting... (28/30)
+[2025-05-12 21:11:56] Waiting... (29/30)
+[2025-05-12 21:11:57] Waiting... (30/30)
+[2025-05-12 21:11:58] Checking service health status:
+[2025-05-12 21:11:58] Checking PostgreSQL...
+docker: 'docker exec' requires at least 2 arguments
+
+Usage:  docker exec [OPTIONS] CONTAINER COMMAND [ARG...]
+
+See 'docker exec --help' for more information
+[2025-05-12 21:11:59] WARNING: PostgreSQL may not be ready yet.
+[2025-05-12 21:11:59] Initializing Cassandra schema...
+Error response from daemon: No such container: cqlsh
+[2025-05-12 21:12:00] WARNING: Cassandra initialization script ran with errors (this might be normal if already initialized).
+[2025-05-12 21:12:00] Checking Kafka topics...
+Error response from daemon: No such container: kafka-topics.sh
+[2025-05-12 21:12:00] WARNING: Kafka may not be ready yet.
+[2025-05-12 21:12:01] Checking MongoDB...
+Error response from daemon: No such container: mongo
+[2025-05-12 21:12:01] WARNING: MongoDB may not be ready yet.
+[2025-05-12 21:12:01] Generating test data...
+[2025-05-12 21:12:03] Checking API health...
+[2025-05-12 21:12:03] Attempt 1/10...
+[2025-05-12 21:12:05] API not ready yet. Waiting...
+[2025-05-12 21:12:10] Attempt 2/10...
+[2025-05-12 21:12:13] API not ready yet. Waiting...
+[2025-05-12 21:12:18] Attempt 3/10...
+[2025-05-12 21:12:20] API not ready yet. Waiting...
+[2025-05-12 21:12:25] Attempt 4/10...
+[2025-05-12 21:12:27] API not ready yet. Waiting...
+[2025-05-12 21:12:33] Attempt 5/10...
+[2025-05-12 21:12:35] API not ready yet. Waiting...
+[2025-05-12 21:12:40] Attempt 6/10...
+[2025-05-12 21:12:43] API not ready yet. Waiting...
+[2025-05-12 21:12:48] Attempt 7/10...
+[2025-05-12 21:12:50] API not ready yet. Waiting...
+[2025-05-12 21:12:55] Attempt 8/10...
+[2025-05-12 21:12:57] API not ready yet. Waiting...
+[2025-05-12 21:13:03] Attempt 9/10...
+[2025-05-12 21:13:05] API not ready yet. Waiting...
+[2025-05-12 21:13:10] Attempt 10/10...
+[2025-05-12 21:13:12] WARNING: API health check failed after 10 attempts.
+[2025-05-12 21:13:13] Mini-Twitter system deployment completed!
+[2025-05-12 21:13:13] Access the services at:
+[2025-05-12 21:13:13]   - API: http://localhost:8000
+[2025-05-12 21:13:13]   - API Documentation: http://localhost:8000/docs
+[2025-05-12 21:13:13]   - Frontend: http://localhost:3000
+[2025-05-12 21:13:13]   - Spark Master UI: http://localhost:8080
+[2025-05-12 21:13:13]   - Minio Console: http://localhost:9001 (user: minioadmin, password: minioadmin)
+[2025-05-12 21:13:13] Deployment log saved to: deployment_20250512_211022.log

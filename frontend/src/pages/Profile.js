@@ -9,6 +9,55 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
 
+// Avatar component with improved handling
+const ProfileAvatar = ({ user, size = "2xl", className = "", onClick = null }) => {
+  const [imageSrc, setImageSrc] = useState('');
+  const [hasError, setHasError] = useState(false);
+  
+  useEffect(() => {
+    if (user?.profile_image_url) {
+      // Add cache-busting parameter to force fresh image
+      setImageSrc(`${user.profile_image_url}${user.profile_image_url.includes('?') ? '&' : '?'}t=${Date.now()}`);
+      setHasError(false);
+    }
+  }, [user]);
+  
+  // Set size classes
+  const sizeClasses = {
+    'sm': 'h-8 w-8',
+    'md': 'h-10 w-10',
+    'lg': 'h-12 w-12',
+    'xl': 'h-16 w-16',
+    '2xl': 'h-24 w-24',
+  }[size] || 'h-24 w-24';
+  
+  if (!user) return null;
+  
+  if (!imageSrc || hasError) {
+    return (
+      <div 
+        className={`${sizeClasses} rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold text-4xl ${className} ${onClick ? 'cursor-pointer' : ''}`}
+        onClick={onClick}
+      >
+        {user.username?.[0]?.toUpperCase()}
+      </div>
+    );
+  }
+  
+  return (
+    <img
+      src={imageSrc}
+      alt={user.username || "User"}
+      className={`${sizeClasses} rounded-full object-cover ${className} ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={onClick}
+      onError={(e) => {
+        e.target.onerror = null;
+        setHasError(true);
+      }}
+    />
+  );
+};
+
 const Profile = () => {
   const navigate = useNavigate();
   const authContext = useContext(AuthContext);
@@ -36,6 +85,7 @@ const Profile = () => {
   // Safe access to currentUser and logout
   const currentUser = authContext?.currentUser;
   const logout = authContext?.logout;
+  const updateUser = authContext?.updateUser;
 
   // Initialize form data from current user and fetch follow counts
   useEffect(() => {
@@ -197,12 +247,19 @@ const Profile = () => {
     fileInputRef.current.click();
   };
 
+  // Broadcast user profile updates to all components
+  const broadcastUserUpdate = (userData) => {
+    const event = new CustomEvent('user-updated', { detail: userData });
+    window.dispatchEvent(event);
+  };
+
   // Manual update of user data without using updateUser function
   const manualUpdateUserData = (updatedData) => {
     try {
       // Get current user data from localStorage
       const userStr = localStorage.getItem('user');
       if (!userStr) {
+        console.error("No user data found in localStorage");
         return false;
       }
       
@@ -221,14 +278,25 @@ const Profile = () => {
         created_at: userData.created_at
       };
       
+      // Add cache busting to profile image URL if it exists
+      if (mergedData.profile_image_url) {
+        mergedData.profile_image_url = `${mergedData.profile_image_url}${
+          mergedData.profile_image_url.includes('?') ? '&' : '?'
+        }t=${Date.now()}`;
+      }
+      
       // Save the updated data back to localStorage
       localStorage.setItem('user', JSON.stringify(mergedData));
+      
+      // Broadcast the update to all listening components
+      broadcastUserUpdate(mergedData);
       
       // Reload the page to apply the changes
       window.location.reload();
       
       return true;
     } catch (error) {
+      console.error("Error in manualUpdateUserData:", error);
       return false;
     }
   };
@@ -271,7 +339,8 @@ const Profile = () => {
           );
           
           if (imageResponse.data && imageResponse.data.url) {
-            profileImageUrl = imageResponse.data.url;
+            // Add cache busting parameter to force fresh image load
+            profileImageUrl = `${imageResponse.data.url}?t=${Date.now()}`;
           }
         } catch (uploadErr) {
           // Check for authentication errors
@@ -324,12 +393,20 @@ const Profile = () => {
           created_at: currentUser.created_at
         };
         
+        // Broadcast the update to other components
+        broadcastUserUpdate(completeUserData);
+        
         // Try to update the user context using different methods
-        if (typeof authContext?.updateUser === 'function') {
+        let updateSuccess = false;
+        if (typeof updateUser === 'function') {
           // Method 1: Use the context's updateUser function if it exists
-          authContext.updateUser(completeUserData);
-        } else {
-          // Method 2: Fall back to manually updating localStorage
+          updateSuccess = updateUser(completeUserData);
+          console.log("Context update result:", updateSuccess);
+        }
+        
+        // If context update failed or wasn't available, fall back to manual update
+        if (!updateSuccess) {
+          console.log("Falling back to manual update");
           manualUpdateUserData(completeUserData);
         }
         
@@ -339,6 +416,8 @@ const Profile = () => {
         setUpdateError('');
       }
     } catch (err) {
+      console.error("Profile update error:", err);
+      
       // Handle specific database errors
       if (err.response?.status === 500 && err.response?.data?.detail?.includes("column")) {
         const errorMsg = err.response.data.detail;
@@ -482,22 +561,7 @@ const Profile = () => {
         <div className="h-48 bg-twitter-blue"></div>
         <div className="absolute top-36 left-4">
           <div className="h-24 w-24 rounded-full bg-white p-1">
-            {currentUser.profile_image_url ? (
-              <img 
-                src={currentUser.profile_image_url} 
-                alt={currentUser.username} 
-                className="h-full w-full rounded-full object-cover"
-                onError={(e) => {
-                  // Fallback if image fails to load
-                  e.target.onerror = null; 
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.username)}&background=random`;
-                }}
-              />
-            ) : (
-              <div className="h-full w-full rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold text-4xl">
-                {currentUser.username?.[0]?.toUpperCase()}
-              </div>
-            )}
+            <ProfileAvatar user={currentUser} size="2xl" />
           </div>
         </div>
         <div className="pt-16 px-4">
@@ -681,5 +745,6 @@ const Profile = () => {
     </div>
   );
 };
+
 
 export default Profile;

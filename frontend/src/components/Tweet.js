@@ -4,6 +4,7 @@ import axios from 'axios';
 import moment from 'moment';
 import { AuthContext } from '../contexts/AuthContext';
 import CommentsSection from './CommentsSection';
+import UserAvatar from './UserAvatar';
 
 // Lucide icons as components
 const HeartIcon = ({ filled }) => (
@@ -36,6 +37,7 @@ const Tweet = ({ tweet: initialTweet, onReplyAdded }) => {
   const [showComments, setShowComments] = useState(false);
   const [isRetweeting, setIsRetweeting] = useState(false);
   const [isRetweetedByUser, setIsRetweetedByUser] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const { currentUser, isAuthenticated } = useContext(AuthContext);
 
   // Format relative time (e.g., "5 minutes ago")
@@ -45,6 +47,19 @@ const Tweet = ({ tweet: initialTweet, onReplyAdded }) => {
 
   // Check if tweet is a retweet
   const isRetweet = tweet && tweet.retweeted_from != null;
+
+  // Listen for user profile updates
+  useEffect(() => {
+    const handleUserUpdate = (e) => {
+      // If the updated user matches this tweet's author, trigger refresh
+      if (e.detail && tweet && e.detail.username === tweet.username) {
+        setRefreshTrigger(prev => prev + 1);
+      }
+    };
+    
+    window.addEventListener('user-updated', handleUserUpdate);
+    return () => window.removeEventListener('user-updated', handleUserUpdate);
+  }, [tweet]);
 
   // On component mount and when tweet changes, fetch the latest counts and statuses
   useEffect(() => {
@@ -146,7 +161,7 @@ const Tweet = ({ tweet: initialTweet, onReplyAdded }) => {
     fetchCommentCount();
     fetchRetweetInfo();
     fetchTweetData();
-  }, [tweet.id, currentUser, isAuthenticated, isRetweet]);
+  }, [tweet.id, currentUser, isAuthenticated, isRetweet, refreshTrigger]);
 
   // Handle like and unlike
   const handleLikeToggle = async () => {
@@ -270,9 +285,11 @@ const Tweet = ({ tweet: initialTweet, onReplyAdded }) => {
       <div className="flex">
         {/* User avatar */}
         <div className="flex-shrink-0 mr-3">
-          <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center text-gray-600 font-bold">
-            {displayTweet.username?.[0]?.toUpperCase() || '?'}
-          </div>
+          <UserAvatar 
+            username={displayTweet.username}
+            imageUrl={displayTweet.profile_image_url}
+            size="md"
+          />
         </div>
         
         {/* Tweet content */}

@@ -99,39 +99,56 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(null);
   };
 
-  // Manual update user function since the existing one might be missing
+  // Enhanced updateUser function with specific handling for profile images
   const updateUser = (userData) => {
-    try {
-      if (!userData) {
-        console.error("Attempted to update user with no data");
-        return;
-      }
-      
-      console.log("Updating user data:", userData);
-      
-      // Create merged data with all fields
-      const mergedData = {
-        ...(currentUser || {}),  // Start with current user data if it exists
-        ...userData,             // Override with new data
-        
-        // Ensure critical fields are never lost
-        id: userData.id || (currentUser ? currentUser.id : null),
-        access_token: userData.access_token || (currentUser ? currentUser.access_token : null)
-      };
-      
-      // Update state
-      setCurrentUser(mergedData);
-      
-      // Update localStorage
-      try {
-        localStorage.setItem('user', JSON.stringify(mergedData));
-        console.log("Updated user data in localStorage");
-      } catch (e) {
-        console.error("Error updating localStorage:", e);
-      }
-    } catch (error) {
-      console.error("Error in updateUser:", error);
+  try {
+    if (!userData) {
+      console.error("Attempted to update user with no data");
+      return false;
     }
+    
+    // Create merged data with all fields
+    const mergedData = {
+      ...(currentUser || {}),
+      ...userData,
+      
+      // Ensure critical fields are never lost
+      id: userData.id || (currentUser ? currentUser.id : null),
+      access_token: userData.access_token || (currentUser ? currentUser.access_token : null),
+    };
+    
+    // Explicit handling for image fields
+    if (userData.profile_image_url) {
+      // Add cache-busting parameter to force fresh image load
+      mergedData.profile_image_url = userData.profile_image_url + `?t=${Date.now()}`;
+    }
+    
+    if (userData.banner_image_url) {
+      mergedData.banner_image_url = userData.banner_image_url + `?t=${Date.now()}`;
+    }
+    
+    // Update React state
+    setCurrentUser(mergedData);
+    
+    // Update localStorage
+    localStorage.setItem('user', JSON.stringify(mergedData));
+    
+    // Broadcast event to notify other components of the update
+    window.dispatchEvent(new CustomEvent('user-updated', { detail: mergedData }));
+    
+    return true;
+  } catch (error) {
+    console.error("Error in updateUser:", error);
+    return false;
+  }
+};
+  // Function to get user avatar URL with fallback
+  const getUserAvatar = (user = null) => {
+    const targetUser = user || currentUser;
+    if (!targetUser) return null;
+    
+    return targetUser.profile_image_url || 
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(targetUser.username)}&background=random`;
   };
 
   const value = {
@@ -139,7 +156,8 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-    updateUser,  // Always include this function
+    updateUser,
+    getUserAvatar,
     isAuthenticated: !!currentUser
   };
 

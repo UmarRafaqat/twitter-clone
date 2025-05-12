@@ -1,0 +1,202 @@
+[2025-05-11 22:27:58] Starting Mini-Twitter deployment...
+[2025-05-11 22:27:58] Checking for required tools...
+[2025-05-11 22:27:58] Docker and Docker Compose are available.
+[2025-05-11 22:27:58] Building and starting containers...
+Compose can now delegate builds to bake for better performance.
+ To do so, set COMPOSE_BAKE=true.
+2025/05/11 22:27:58 http2: server: error reading preface from client //./pipe/dockerDesktopLinuxEngine: file has already been closed
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [spark-scheduler internal] load build definition from Dockerfile
+#1 transferring dockerfile: 424B 0.0s done
+#1 DONE 0.0s
+
+#2 [kafka-consumers internal] load build definition from Dockerfile
+#2 transferring dockerfile: 207B 0.0s done
+#2 DONE 0.0s
+
+#3 [spark-scheduler internal] load metadata for docker.io/bitnami/spark:3.3
+#3 DONE 0.0s
+
+#4 [api internal] load build definition from Dockerfile
+#4 transferring dockerfile: 251B done
+#4 DONE 0.0s
+
+#5 [spark-scheduler internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.0s
+
+#6 [api internal] load metadata for docker.io/library/python:3.9-slim
+#6 ...
+
+#7 [spark-scheduler 1/7] FROM docker.io/bitnami/spark:3.3
+#7 DONE 0.0s
+
+#8 [spark-scheduler internal] load build context
+#8 transferring context: 224B done
+#8 DONE 0.0s
+
+#9 [spark-scheduler 4/7] RUN mkdir -p /opt/spark-jobs
+#9 CACHED
+
+#10 [spark-scheduler 3/7] RUN pip install --no-cache-dir -r /tmp/requirements.txt
+#10 CACHED
+
+#11 [spark-scheduler 2/7] COPY requirements.txt /tmp/
+#11 CACHED
+
+#12 [spark-scheduler 6/7] COPY *.py /opt/spark-jobs/
+#12 CACHED
+
+#13 [spark-scheduler 5/7] WORKDIR /opt/spark-jobs
+#13 CACHED
+
+#14 [spark-scheduler 7/7] RUN chmod -R 755 /opt/spark-jobs
+#14 CACHED
+
+#15 [spark-scheduler] exporting to image
+#15 exporting layers done
+#15 writing image sha256:9e0a3877aaafefc96da9c9d1726de190648b5a49bcfbf32fd02c5136d33be4ed done
+#15 naming to docker.io/library/mini-twitter-v-full-ui-correct-spark-scheduler done
+#15 DONE 0.0s
+
+#16 [spark-scheduler] resolving provenance for metadata file
+#16 DONE 0.0s
+
+#6 [api internal] load metadata for docker.io/library/python:3.9-slim
+#6 DONE 1.8s
+
+#17 [kafka-consumers internal] load .dockerignore
+#17 transferring context: 2B done
+#17 DONE 0.0s
+
+#18 [api internal] load .dockerignore
+#18 transferring context: 2B done
+#18 DONE 0.0s
+
+#19 [api 1/5] FROM docker.io/library/python:3.9-slim@sha256:bef8d69306a7905f55cd523f5604de1dde45bbf745ba896dbb89f6d15c727170
+#19 DONE 0.0s
+
+#20 [kafka-consumers internal] load build context
+#20 transferring context: 792B done
+#20 DONE 0.0s
+
+#21 [api internal] load build context
+#21 transferring context: 277B done
+#21 DONE 0.0s
+
+#22 [api 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#22 CACHED
+
+#23 [api 3/5] COPY requirements.txt .
+#23 CACHED
+
+#24 [api 5/5] COPY . .
+#24 CACHED
+
+#25 [api 2/5] WORKDIR /app
+#25 CACHED
+
+#26 [kafka-consumers 3/5] COPY requirements.txt .
+#26 CACHED
+
+#27 [kafka-consumers 4/5] RUN pip install --no-cache-dir -r requirements.txt
+#27 CACHED
+
+#28 [kafka-consumers 5/5] COPY . .
+#28 CACHED
+
+#29 [kafka-consumers] exporting to image
+#29 exporting layers done
+#29 writing image sha256:f0250c4984a51b920f461ddcc0c5b4df689afff627dbd813f5f1940d7751f725 done
+#29 naming to docker.io/library/mini-twitter-v-full-ui-correct-kafka-consumers done
+#29 DONE 0.0s
+
+#30 [api] exporting to image
+#30 exporting layers done
+#30 writing image sha256:658283fb22586a824872f50c6f7f819f6c55cf8f4404d0b034003d2c0bda25af done
+#30 naming to docker.io/library/mini-twitter-v-full-ui-correct-api done
+#30 DONE 0.0s
+
+#31 [kafka-consumers] resolving provenance for metadata file
+#31 DONE 0.0s
+
+#32 [api] resolving provenance for metadata file
+#32 DONE 0.0s
+
+#33 [frontend internal] load build definition from Dockerfile
+#33 transferring dockerfile: 157B done
+#33 DONE 0.0s
+
+#34 [frontend internal] load metadata for docker.io/library/node:16
+#34 DONE 2.5s
+
+#35 [frontend internal] load .dockerignore
+#35 transferring context: 2B done
+#35 DONE 0.0s
+
+#36 [frontend 1/5] FROM docker.io/library/node:16@sha256:f77a1aef2da8d83e45ec990f45df50f1a286c5fe8bbfb8c6e4246c6389705c0b
+#36 DONE 0.0s
+
+#37 [frontend internal] load build context
+#37 transferring context: 4.46kB 0.0s done
+#37 DONE 0.0s
+
+#38 [frontend 3/5] COPY package.json ./
+#38 CACHED
+
+#39 [frontend 2/5] WORKDIR /app
+#39 CACHED
+
+#40 [frontend 4/5] RUN npm install
+#40 CACHED
+
+#41 [frontend 5/5] COPY . .
+#41 DONE 0.1s
+
+#42 [frontend] exporting to image
+#42 exporting layers 0.0s done
+#42 writing image sha256:ebe90fe71810c4a1d22d99ba143e19f16636b4b4d6543115f74d8a50c878d80f done
+#42 naming to docker.io/library/mini-twitter-v-full-ui-correct-frontend 0.0s done
+#42 DONE 0.1s
+
+#43 [frontend] resolving provenance for metadata file
+#43 DONE 0.1s
+ api  Built
+ frontend  Built
+ kafka-consumers  Built
+ spark-scheduler  Built
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Running
+ Container mini-twitter-v-full-ui-correct-cassandra-1  Running
+ Container mini-twitter-v-full-ui-correct-postgres-1  Created
+ Container mini-twitter-v-full-ui-correct-minio-1  Running
+ Container mini-twitter-v-full-ui-correct-spark-master-1  Running
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Running
+ Container mini-twitter-v-full-ui-correct-spark-worker-1  Running
+ Container mini-twitter-v-full-ui-correct-kafka-1  Running
+ Container mini-twitter-v-full-ui-correct-kafka-consumers-1  Running
+ Container mini-twitter-v-full-ui-correct-api-1  Running
+ Container mini-twitter-v-full-ui-correct-frontend-1  Recreate
+ Container mini-twitter-v-full-ui-correct-frontend-1  Recreated
+ Container mini-twitter-v-full-ui-correct-postgres-1  Starting
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Started
+ Container mini-twitter-v-full-ui-correct-zookeeper-1  Healthy
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Starting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-postgres-1  Waiting
+ Container mini-twitter-v-full-ui-correct-kafka-1  Waiting
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Waiting
+ Container mini-twitter-v-full-ui-correct-spark-scheduler-1  Started
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-kafka-1  Healthy
+ Container mini-twitter-v-full-ui-correct-kafka-1  Healthy
+ Container mini-twitter-v-full-ui-correct-mongodb-1  Healthy
+ Container mini-twitter-v-full-ui-correct-postgres-1  Error
+ Container mini-twitter-v-full-ui-correct-postgres-1  Error
+dependency failed to start: container mini-twitter-v-full-ui-correct-postgres-1 exited (1)
+[2025-05-11 22:28:08] ERROR: Docker Compose build failed.
